@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    // 目标 JavaScript 版本：ES2020 是现代浏览器都支持的版本
+    "target": "ES2020",
+    // 模块系统：ES2020 的模块系统，支持 import/export
+    "module": "ES2020",
+    // 模块解析策略：node 模式，可以像 Node.js 一样解析模块路径
+    "moduleResolution": "node",
+    // 库文件：包含浏览器 DOM API 和 ES2020 的类型定义
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // JSX 转换：React 17+ 的新转换方式，不需要在每个文件导入 React
+    "jsx": "react-jsx",
+    // 严格模式：启用所有严格类型检查，帮助发现潜在错误
+    "strict": true,
+    // 允许导入 JSON 文件（如 manifest.json）
+    "resolveJsonModule": true,
+    // 允许使用默认导入（import _ from 'lodash'）
+    "esModuleInterop": true,
+    // 跳过类型检查：跳过 node_modules 的类型检查，加快编译速度
+    "skipLibCheck": true,
+    // 强制使用 import/export，不允许使用 CommonJS 的 require
+    "forceConsistentCasingInFileNames": true,
+    // 输出目录：编译后的 .js 文件输出位置
+    "outDir": "./dist",
+    // 根目录：TypeScript 源文件的位置
+    "rootDir": "./src",
+    // 允许导入 .tsx 文件
+    "allowSyntheticDefaultImports": true,
+    // 路径别名：方便导入文件，@ 指向 src 目录
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  // 包含的文件：只编译 src 目录下的文件
+  "include": ["src/**/*"],
+  // 排除的文件：不编译这些目录
+  "exclude": ["node_modules", "dist"]
+}
