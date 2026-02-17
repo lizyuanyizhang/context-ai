@@ -10,7 +10,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react'
-import { BookOpen } from 'lucide-react'
 import TranslationPanel, { TranslationResult } from './components/TranslationPanel'
 import FloatingButtonContainer from './components/FloatingButtonContainer'
 import WordbookPanel from './components/WordbookPanel'
@@ -21,14 +20,22 @@ import { createHighlight, removeHighlight, clearAllHighlights } from './utils/se
 import { detectLanguage, ttsManager } from '../utils/tts'
 import { hybridLanguageDetect } from '../utils/hybridLanguageDetector'
 
+/** 用户可选的源语言：自动检测 或 指定语言（与翻译 API 一致，不含中文） */
+export type ManualSourceLang = 'auto' | 'en' | 'de' | 'fr' | 'ja' | 'es'
+
 function App() {
+  // 是否显示结果面板（需要在 useTextSelection 之前声明，因为 useTextSelection 需要用到它）
+  const [showPanel, setShowPanel] = useState(false)
+  
   // 使用自定义 Hook 管理文字选择
   // 这个 Hook 封装了所有选择相关的逻辑：监听、位置计算、边界处理等
-  const { selectedText, buttonPosition, clearSelection } = useTextSelection({
+  const { selectedText, buttonPosition, clearSelection, restoreSelection } = useTextSelection({
     minLength: 2, // 最少 2 个字符
-    maxLength: 500, // 最多 500 个字符
-    debounceDelay: 300, // 防抖延迟 300ms，给用户更多时间完成选择
-    enabled: true // 启用选择功能
+    maxLength: 8000, // 支持整段翻译（单词、句子、段落均可）
+    debounceDelay: 300,
+    enabled: true,
+    // 翻译面板打开时锁定选区，避免点击面板内导致选区被清空、面板消失
+    keepSelectionWhenPanelOpen: showPanel
   })
   
   // 使用翻译 Hook 管理翻译状态和调用
@@ -36,9 +43,8 @@ function App() {
   
   // 使用生词本 Hook 管理生词本操作
   const { saveWord } = useWordbook()
-  
-  // 是否显示结果面板
-  const [showPanel, setShowPanel] = useState(false)
+  // 翻译面板锚点：在选中文字下方显示（方便拖动），{ top, left } 或 { bottom, left } 为视口坐标
+  const [panelAnchor, setPanelAnchor] = useState<{ top?: number; bottom?: number; left: number } | null>(null)
   
   // 是否显示生词本面板
   const [showWordbook, setShowWordbook] = useState(false)
@@ -48,6 +54,12 @@ function App() {
   
   // 是否正在播放语音
   const [isPlaying, setIsPlaying] = useState(false)
+  
+  // 用户手动选择的源语言（'auto' 表示使用自动检测）
+  const [manualSourceLang, setManualSourceLang] = useState<ManualSourceLang>('auto')
+  
+  // 当前翻译结果使用的源语言（用于在面板中显示「翻译自：英语」及重新翻译）
+  const [resultSourceLang, setResultSourceLang] = useState<'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh' | null>(null)
   
   // 高亮元素的 ID 引用（用于清除高亮）
   const highlightIdRef = useRef<string>('')
@@ -87,8 +99,9 @@ function App() {
   // 当前翻译的文本引用（用于确保翻译的是最新选择的文字）
   const currentTranslatingTextRef = useRef<string>('')
   
-  // 处理浮动按钮点击：显示翻译结果面板并开始翻译
-  const handleButtonClick = async () => {
+  // 仅当用户点击工具栏「翻译」时打开面板并翻译，选中文字时只弹出工具栏，不自动打开翻译面板
+  // 支持指定目标语言（targetLang），如果不指定则默认翻译为中文
+  const handleTranslateClick = async (targetLang?: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh') => {
     // 保存当前要翻译的文本
     const textToTranslate = selectedText
     
@@ -100,38 +113,100 @@ function App() {
     // 更新当前翻译的文本引用
     currentTranslatingTextRef.current = textToTranslate
     
-    // 显示翻译面板
+    // 调试日志：检查选中的文本
+    console.log('[Context AI] 准备翻译的文本:', {
+      selectedText: selectedText,
+      textToTranslate: textToTranslate,
+      textLength: textToTranslate.length,
+      preview: textToTranslate.substring(0, 100)
+    })
+    
+    // 在选中文字下方显示翻译面板（方便拖动）：面板顶部对齐选区底部
+    if (buttonPosition?.rect) {
+      const rect = buttonPosition.rect
+      const padding = 12 // 增加间距，让面板更明显
+      const panelWidth = 480 // 更新为新的默认宽度
+      const left = Math.max(padding, Math.min(rect.left, window.innerWidth - panelWidth - padding))
+      // 使用 top 定位，显示在文字下方
+      const top = rect.bottom + padding
+      setPanelAnchor({ top, left })
+    } else {
+      setPanelAnchor(null)
+    }
     setShowPanel(true)
     
-    // 清除高亮（面板显示后不再需要高亮）
-    if (highlightIdRef.current) {
-      removeHighlight(highlightIdRef.current)
-      highlightIdRef.current = ''
-    }
+    // 保存当前的 Range，以便后续恢复选择状态
+    // 注意：不清除高亮，保持选中状态可见
     
     // 立即清除之前的翻译结果和错误（确保显示新的加载状态）
     clear()
     
-    // 检测语言并开始翻译
-    // 使用混合架构语言检测（FastText + 字符扫描 + LLM）
-    const detectionResult = await hybridLanguageDetect(textToTranslate)
-    const detectedLang = detectionResult.language
+    // 恢复选择状态，确保用户选中的文字保持高亮
+    // 使用 setTimeout 确保在下一个事件循环中执行，避免被其他操作覆盖
+    setTimeout(() => {
+      restoreSelection()
+    }, 50)
     
-    // 记录检测结果（用于调试）
-    console.log('[Context AI] 语言检测结果:', {
-      text: textToTranslate,
-      language: detectedLang,
-      confidence: detectionResult.confidence,
-      method: detectionResult.method,
-      reasoning: detectionResult.reasoning
-    })
+    // 确定源语言和目标语言
+    let apiLang: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh'
+    let targetLanguage: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh' = 'zh' // 默认翻译为中文
     
-    // 将检测到的语言映射到翻译 API 支持的语言
-    // 如果检测到中文，使用英语作为默认源语言（因为中文通常不需要翻译）
-    const apiLang: 'en' | 'de' | 'fr' | 'ja' | 'es' = detectedLang === 'zh' ? 'en' : detectedLang
+    if (targetLang) {
+      // 如果指定了目标语言，需要确定源语言
+      targetLanguage = targetLang
+      
+      // 确定源语言：用户手动选择优先，否则使用自动检测
+      if (manualSourceLang !== 'auto') {
+        apiLang = manualSourceLang
+        console.log('[Context AI] 使用用户选择源语言:', apiLang, '翻译为:', targetLang)
+      } else {
+        // 使用混合架构语言检测（FastText + 字符扫描 + LLM）
+        const detectionResult = await hybridLanguageDetect(textToTranslate)
+        const detectedLang = detectionResult.language
+        console.log('[Context AI] 语言检测结果:', {
+          text: textToTranslate.substring(0, 100),
+          language: detectedLang,
+          confidence: detectionResult.confidence,
+          method: detectionResult.method,
+          targetLang
+        })
+        // 如果检测到中文，源语言就是中文；否则使用检测到的语言
+        apiLang = detectedLang === 'zh' ? 'zh' : detectedLang
+      }
+    } else {
+      // 默认情况：外语翻译为中文
+      if (manualSourceLang !== 'auto') {
+        apiLang = manualSourceLang
+        console.log('[Context AI] 使用用户选择语言:', apiLang)
+      } else {
+        // 使用混合架构语言检测（FastText + 字符扫描 + LLM）
+        const detectionResult = await hybridLanguageDetect(textToTranslate)
+        const detectedLang = detectionResult.language
+        console.log('[Context AI] 语言检测结果:', {
+          text: textToTranslate.substring(0, 100),
+          language: detectedLang,
+          confidence: detectionResult.confidence,
+          method: detectionResult.method
+        })
+        // 如果检测到中文，源语言就是中文；否则使用检测到的语言
+        apiLang = detectedLang === 'zh' ? 'zh' : detectedLang
+      }
+    }
     
-    // 开始翻译
-    await translate(textToTranslate, apiLang)
+    setResultSourceLang(apiLang)
+    
+    // 在翻译开始前再次恢复选择（防止语言检测过程中选择被清除）
+    setTimeout(() => {
+      restoreSelection()
+    }, 100)
+    
+    // 开始翻译（传递目标语言）
+    await translate(textToTranslate, apiLang, targetLanguage)
+    
+    // 翻译完成后，再次恢复选择状态，确保选中文字保持高亮
+    setTimeout(() => {
+      restoreSelection()
+    }, 100)
     
     // 翻译完成后，再次检查是否还是当前要翻译的文本
     // 如果用户在这期间选择了新文字，忽略这次翻译结果
@@ -149,16 +224,63 @@ function App() {
       currentTranslatingTextRef.current = ''
     }
   }, [selectedText, showPanel, clear])
+
+  // 当翻译结果更新时，恢复选择状态（确保选中文字保持高亮）
+  useEffect(() => {
+    if (result && showPanel) {
+      // 翻译完成后，恢复选择状态
+      setTimeout(() => {
+        restoreSelection()
+      }, 100)
+    }
+  }, [result, showPanel, restoreSelection])
+
+  // 当翻译结果更新时，恢复选择状态（确保选中文字保持高亮）
+  useEffect(() => {
+    if (result && showPanel) {
+      // 翻译完成后，恢复选择状态
+      setTimeout(() => {
+        restoreSelection()
+      }, 100)
+    }
+  }, [result, showPanel, restoreSelection])
   
-  // 当面板关闭时，清除翻译结果
+  // 当面板关闭时，清除翻译结果和锚点
   const handlePanelClose = () => {
     setShowPanel(false)
+    setPanelAnchor(null)
+    setResultSourceLang(null)
     clear() // 清除翻译结果和错误
-    // 停止语音播放（如果正在播放）
     ttsManager.stop()
     setIsPlaying(false)
   }
   
+  // 复制选中文字到剪贴板，便于用户粘贴到任意位置（不翻译时也可用）
+  const handleCopy = async () => {
+    if (!selectedText || selectedText.trim().length === 0) return
+    try {
+      await navigator.clipboard.writeText(selectedText.trim())
+    } catch (err) {
+      console.error('[Context AI] 复制失败:', err)
+      alert('复制失败，请检查浏览器是否允许剪贴板访问')
+    }
+  }
+
+  // 从浮动工具栏点击「加入生词本」：先把当前选中内容保存到生词本，再打开生词本面板（刚加入的会出现在列表中）
+  const handleOpenWordbookFromToolbar = async () => {
+    if (selectedText && selectedText.trim().length > 0) {
+      const success = await saveWord({
+        originalText: selectedText.trim(),
+        translation: selectedText.trim()
+      })
+      if (success) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      }
+    }
+    setShowWordbook(true)
+  }
+
   // 处理发音按钮点击：直接朗读选中的文本（支持停止播放）
   const handlePronounce = () => {
     // 如果正在播放，停止播放
@@ -172,15 +294,16 @@ function App() {
       return
     }
     
-    // 检测语言
-    const detectedLang = detectLanguage(selectedText)
+    // 语言：用户手动选择优先，否则自动检测
+    const langForTts = manualSourceLang !== 'auto'
+      ? manualSourceLang
+      : detectLanguage(selectedText)
     
-    // 开始播放
     setIsPlaying(true)
     
     ttsManager.speak(
       selectedText,
-      detectedLang,
+      langForTts,
       // 播放结束回调（包括用户主动停止）
       () => {
         setIsPlaying(false)
@@ -203,51 +326,35 @@ function App() {
           y={buttonPosition.y}
           isLoading={isLoading}
           isPlaying={isPlaying}
-          onTranslate={handleButtonClick}
+          manualSourceLang={manualSourceLang}
+          onManualSourceLangChange={setManualSourceLang}
+          onTranslate={handleTranslateClick}
           onPronounce={handlePronounce}
-          onOpenWordbook={() => setShowWordbook(true)}
+          onCopy={handleCopy}
+          onOpenWordbook={handleOpenWordbookFromToolbar}
+          selectedText={selectedText}
         />
       )}
 
-      {/* 如果没有选中文字，显示生词本入口（固定在右下角，苹果风格） */}
-      {!buttonPosition && !showPanel && (
-        <button
-          onClick={() => setShowWordbook(true)}
-          className="fixed bottom-6 right-6 text-white px-5 py-3 rounded-2xl font-medium text-sm flex items-center gap-2 z-[999999] transition-all duration-200"
-          style={{
-            background: 'linear-gradient(135deg, var(--forest-accent) 0%, var(--forest-accent-hover) 100%)',
-            boxShadow: '0 8px 24px rgba(52, 199, 89, 0.4)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 12px 32px rgba(52, 199, 89, 0.5)'
-            e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = '0 8px 24px rgba(52, 199, 89, 0.4)'
-            e.currentTarget.style.transform = 'translateY(0) scale(1)'
-          }}
-          title="打开生词本"
-          aria-label="打开生词本"
-        >
-          <BookOpen className="w-5 h-5" />
-          <span>生词本</span>
-        </button>
-      )}
-
-      {/* 翻译结果面板：显示翻译、语法、上下文等信息 */}
+      {/* 翻译结果面板：在选中文字下方显示，方便用户对照查看 */}
       {showPanel && selectedText && (
         <TranslationPanel
+          anchorPosition={panelAnchor}
           text={selectedText}
           result={result || undefined}
           isLoading={isLoading}
           error={error}
+          sourceLanguage={resultSourceLang ?? undefined}
+          onRetranslateWithLang={(lang) => {
+            setResultSourceLang(lang)
+            translate(selectedText, lang)
+          }}
           onClose={handlePanelClose}
           onSave={async (result) => {
-            // 保存到生词本
             const success = await saveWord(result)
             if (success) {
               setSaveSuccess(true)
-              // 3 秒后隐藏成功提示
+              setShowWordbook(true) // 加入后直接打开生词本，刚加入的已在列表中
               setTimeout(() => setSaveSuccess(false), 3000)
             }
           }}

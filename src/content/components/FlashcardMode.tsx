@@ -255,40 +255,23 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
     return (
       <div className="fixed inset-0 flex items-center justify-center z-[1000003]"
         style={{
-          background: 'linear-gradient(135deg, rgba(45, 80, 22, 0.3) 0%, rgba(107, 159, 120, 0.2) 100%)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          background: 'rgba(55, 53, 47, 0.4)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          animation: 'fadeIn 0.25s ease'
         }}
       >
-        <div className="glass-effect rounded-3xl w-full max-w-md mx-4 p-8 text-center">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center" 
-            style={{ background: 'rgba(107, 159, 120, 0.1)' }}>
-            <BookOpen className="w-10 h-10" style={{ color: 'var(--forest-medium)' }} />
+        <div className="notion-panel w-full max-w-md mx-4 p-8 text-center">
+          <div className="w-14 h-14 mx-auto mb-5 rounded-md flex items-center justify-center" style={{ background: 'var(--notion-hover)' }}>
+            <BookOpen className="w-7 h-7" style={{ color: 'var(--notion-text-tertiary)' }} strokeWidth={2} />
           </div>
-          <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--forest-dark)' }}>
+          <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--notion-text)' }}>
             没有需要学习的单词
           </h2>
-          <p className="text-sm mb-6" style={{ color: 'var(--apple-text-secondary)' }}>
-            所有单词都已掌握，或者生词本为空
+          <p className="text-sm mb-6" style={{ color: 'var(--notion-text-tertiary)' }}>
+            所有单词都已掌握，或生词本为空
           </p>
-          <button
-            onClick={onClose}
-            className="px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200"
-            style={{
-              background: 'linear-gradient(135deg, var(--forest-accent) 0%, rgba(52, 199, 89, 0.8) 100%)',
-              color: 'white',
-              boxShadow: '0 4px 12px rgba(52, 199, 89, 0.3)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(52, 199, 89, 0.4)'
-              e.currentTarget.style.transform = 'translateY(-1px)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(52, 199, 89, 0.3)'
-              e.currentTarget.style.transform = 'translateY(0)'
-            }}
-          >
+          <button onClick={onClose} className="notion-btn-primary px-5 py-2.5 text-sm font-medium">
             返回生词本
           </button>
         </div>
@@ -303,68 +286,52 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[1000003]"
       style={{
-        background: 'linear-gradient(135deg, rgba(45, 80, 22, 0.3) 0%, rgba(107, 159, 120, 0.2) 100%)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        background: 'rgba(55, 53, 47, 0.4)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        animation: 'fadeIn 0.25s ease'
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose()
-        }
-      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="glass-effect rounded-3xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col"
-        style={{
-          animation: 'slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          pointerEvents: 'auto'
-        }}
+      <div className="notion-panel w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col overflow-hidden"
+        style={{ padding: 0, animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)', pointerEvents: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 头部 */}
-        <div className="flex items-center justify-between p-6" style={{ borderBottom: '1px solid rgba(107, 159, 120, 0.2)' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--notion-border)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" 
-              style={{ background: 'linear-gradient(135deg, rgba(52, 199, 89, 0.15) 0%, rgba(107, 159, 120, 0.1) 100%)' }}>
-              <BookOpen className="w-5 h-5" style={{ color: 'var(--forest-medium)' }} />
+            <div className="w-9 h-9 rounded-md flex items-center justify-center" style={{ background: 'var(--notion-hover)' }}>
+              <BookOpen className="w-4 h-4" style={{ color: 'var(--notion-text-secondary)' }} strokeWidth={2} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--forest-dark)' }}>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--notion-text)' }}>
                 闪卡学习
               </h2>
-              <span className="text-sm font-medium" style={{ color: 'var(--apple-text-secondary)' }}>
+              <span className="text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
                 {currentIndex + 1} / {wordsToStudy.length}
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-            style={{ color: 'var(--apple-text-secondary)' }}
+            className="w-8 h-8 flex items-center justify-center rounded transition-colors"
+            style={{ color: 'var(--notion-text-secondary)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--notion-hover)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             aria-label="关闭"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
-        
-        {/* 进度条 */}
-        <div className="px-6 pt-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium" style={{ color: 'var(--forest-medium)' }}>
-              学习进度
-            </span>
-            <span className="text-sm font-medium" style={{ color: 'var(--forest-medium)' }}>
-              {progress}%
-            </span>
+
+        <div className="px-5 pt-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs" style={{ color: 'var(--notion-text-secondary)' }}>学习进度</span>
+            <span className="text-xs" style={{ color: 'var(--notion-text-secondary)' }}>{progress}%</span>
           </div>
-          <div className="w-full h-2 rounded-full overflow-hidden" 
-            style={{ background: 'rgba(107, 159, 120, 0.1)' }}>
-            <div 
+          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--notion-border)' }}>
+            <div
               className="h-full rounded-full transition-all duration-300"
-              style={{
-                width: `${progress}%`,
-                background: 'linear-gradient(90deg, var(--forest-accent) 0%, rgba(52, 199, 89, 0.8) 100%)'
-              }}
+              style={{ width: `${progress}%`, background: 'var(--notion-accent)' }}
             />
           </div>
         </div>
@@ -384,8 +351,8 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
               onClick={flipCard}
             >
               {/* 正面（原文） */}
-              <div 
-                className="absolute inset-0 backface-hidden forest-card rounded-3xl p-8 flex flex-col items-center justify-center"
+              <div
+                className="absolute inset-0 backface-hidden notion-card rounded-lg p-8 flex flex-col items-center justify-center"
                 style={{
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
@@ -393,11 +360,11 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
                 }}
               >
                 <div className="text-center w-full">
-                  <h3 className="text-3xl font-bold mb-4" style={{ color: 'var(--apple-text)' }}>
+                  <h3 className="text-2xl font-semibold mb-4" style={{ color: 'var(--notion-text)' }}>
                     {currentWord.originalText}
                   </h3>
                   {currentWord.phonetic && (
-                    <p className="text-lg font-mono mb-4" style={{ color: 'var(--forest-medium)' }}>
+                    <p className="text-lg font-mono mb-4" style={{ color: 'var(--notion-text-tertiary)' }}>
                       [{currentWord.phonetic}]
                     </p>
                   )}
@@ -409,10 +376,8 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
                       }}
                       className="w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200"
                       style={{
-                        color: playingWordId === currentWord.id ? 'var(--forest-accent)' : 'var(--forest-medium)',
-                        background: playingWordId === currentWord.id 
-                          ? 'rgba(52, 199, 89, 0.15)' 
-                          : 'rgba(107, 159, 120, 0.1)'
+                        color: playingWordId === currentWord.id ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                        background: playingWordId === currentWord.id ? 'rgba(35, 131, 226, 0.12)' : 'var(--notion-hover)'
                       }}
                       aria-label="播放发音"
                     >
@@ -423,18 +388,18 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
                       )}
                     </button>
                   </div>
-                  <p className="text-sm mt-6" style={{ color: 'var(--apple-text-secondary)' }}>
+                  <p className="text-sm mt-6" style={{ color: 'var(--notion-text-tertiary)' }}>
                     点击卡片翻转查看翻译
                   </p>
-                  <p className="text-xs mt-2" style={{ color: 'var(--apple-text-secondary)' }}>
+                  <p className="text-xs mt-2" style={{ color: 'var(--notion-text-tertiary)' }}>
                     或按空格键
                   </p>
                 </div>
               </div>
-              
+
               {/* 背面（翻译） */}
-              <div 
-                className="absolute inset-0 backface-hidden forest-card rounded-3xl p-8 flex flex-col items-center justify-center"
+              <div
+                className="absolute inset-0 backface-hidden notion-card rounded-lg p-8 flex flex-col items-center justify-center"
                 style={{
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
@@ -442,24 +407,22 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
                 }}
               >
                 <div className="text-center w-full">
-                  <h3 className="text-3xl font-bold mb-4" style={{ color: 'var(--apple-text)' }}>
+                  <h3 className="text-2xl font-semibold mb-4" style={{ color: 'var(--notion-text)' }}>
                     {currentWord.translation}
                   </h3>
                   {currentWord.grammar && (
-                    <div className="forest-card mt-4 p-3 rounded-xl text-sm text-left" 
-                      style={{ background: 'rgba(52, 199, 89, 0.08)' }}>
-                      <span className="font-medium" style={{ color: 'var(--forest-medium)' }}>💡 语法：</span>
-                      <span className="ml-2" style={{ color: 'var(--apple-text)' }}>{currentWord.grammar}</span>
+                    <div className="notion-card mt-4 p-3 rounded text-sm text-left">
+                      <span style={{ color: 'var(--notion-text-secondary)' }}>语法：</span>
+                      <span className="ml-2" style={{ color: 'var(--notion-text)' }}>{currentWord.grammar}</span>
                     </div>
                   )}
                   {currentWord.context && (
-                    <div className="forest-card mt-3 p-3 rounded-xl text-sm text-left" 
-                      style={{ background: 'rgba(74, 124, 89, 0.08)' }}>
-                      <span className="font-medium" style={{ color: 'var(--forest-medium)' }}>🌿 语境：</span>
-                      <span className="ml-2" style={{ color: 'var(--apple-text)' }}>{currentWord.context}</span>
+                    <div className="notion-card mt-3 p-3 rounded text-sm text-left">
+                      <span style={{ color: 'var(--notion-text-secondary)' }}>语境：</span>
+                      <span className="ml-2" style={{ color: 'var(--notion-text)' }}>{currentWord.context}</span>
                     </div>
                   )}
-                  <p className="text-sm mt-6" style={{ color: 'var(--apple-text-secondary)' }}>
+                  <p className="text-sm mt-6" style={{ color: 'var(--notion-text-tertiary)' }}>
                     点击卡片返回原文
                   </p>
                 </div>
@@ -467,131 +430,63 @@ function FlashcardMode({ words, onClose, onRefresh }: FlashcardModeProps) {
             </div>
           </div>
         </div>
-        
-        {/* 操作按钮 */}
-        <div className="p-6 space-y-4" style={{ borderTop: '1px solid rgba(107, 159, 120, 0.2)' }}>
-          {/* 导航按钮 */}
-          <div className="flex items-center justify-center gap-4">
+
+        <div className="px-5 py-4 space-y-4" style={{ borderTop: '1px solid var(--notion-border)' }}>
+          <div className="flex items-center justify-center gap-3">
             <button
               onClick={handlePrevious}
               disabled={currentIndex === 0}
-              className="w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: currentIndex === 0 ? 'transparent' : 'rgba(107, 159, 120, 0.1)'
-              }}
+              className="w-9 h-9 flex items-center justify-center rounded notion-btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="上一个"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" strokeWidth={2} />
             </button>
-            
-            <button
-              onClick={flipCard}
-              className="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: 'rgba(107, 159, 120, 0.1)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.2)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.1)'
-              }}
-            >
-              <RotateCcw className="w-4 h-4" />
-              翻转卡片
+            <button onClick={flipCard} className="notion-btn-secondary px-4 py-2 text-sm font-medium flex items-center gap-2">
+              <RotateCcw className="w-4 h-4" strokeWidth={2} />
+              翻转
             </button>
-            
             <button
               onClick={handleNext}
               disabled={currentIndex === wordsToStudy.length - 1}
-              className="w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: currentIndex === wordsToStudy.length - 1 ? 'transparent' : 'rgba(107, 159, 120, 0.1)'
-              }}
+              className="w-9 h-9 flex items-center justify-center rounded notion-btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="下一个"
             >
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4" strokeWidth={2} />
             </button>
           </div>
-          
-          {/* 状态按钮 */}
-          <div className="flex items-center justify-center gap-3">
+
+          <div className="flex items-center justify-center gap-2">
             <button
               onClick={handleDontKnow}
-              className="flex-1 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2"
-              style={{
-                background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%)',
-                color: 'white',
-                boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 6px 16px rgba(255, 107, 107, 0.4)'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 107, 107, 0.3)'
-                e.currentTarget.style.transform = 'translateY(0)'
-              }}
+              className="flex-1 px-4 py-2.5 rounded text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+              style={{ background: 'var(--notion-error)', color: '#fff', border: 'none' }}
             >
-              <XCircle className="w-4 h-4" />
+              <XCircle className="w-4 h-4" strokeWidth={2} />
               不认识 (1)
             </button>
-            
             <button
               onClick={handleKnow}
-              className="flex-1 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2"
-              style={{
-                background: 'linear-gradient(135deg, var(--forest-accent) 0%, rgba(52, 199, 89, 0.8) 100%)',
-                color: 'white',
-                boxShadow: '0 4px 12px rgba(52, 199, 89, 0.3)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 6px 16px rgba(52, 199, 89, 0.4)'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(52, 199, 89, 0.3)'
-                e.currentTarget.style.transform = 'translateY(0)'
-              }}
+              className="flex-1 notion-btn-primary px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4" strokeWidth={2} />
               认识 (2)
             </button>
-            
             <button
               onClick={handleMastered}
-              className="flex-1 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: 'rgba(107, 159, 120, 0.1)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.2)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.1)'
-              }}
+              className="flex-1 notion-btn-secondary px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4" strokeWidth={2} />
               已掌握 (3)
             </button>
           </div>
-          
-          {/* 快捷键提示 */}
-          <div className="text-center">
-            <p className="text-xs" style={{ color: 'var(--apple-text-secondary)' }}>
-              <kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>Space</kbd> 翻转 · 
-              <kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>←</kbd>/<kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>→</kbd> 切换 · 
-              <kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>1</kbd>/<kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>2</kbd>/<kbd className="px-2 py-1 rounded" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>3</kbd> 选择状态
-            </p>
-          </div>
+
+          <p className="text-center text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
+            <kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>Space</kbd> 翻转
+            <span className="mx-1">·</span>
+            <kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>←</kbd>/<kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>→</kbd> 切换
+            <span className="mx-1">·</span>
+            <kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>1</kbd>/<kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>2</kbd>/<kbd className="px-1.5 py-0.5 rounded" style={{ background: 'var(--notion-hover)' }}>3</kbd> 状态
+          </p>
         </div>
       </div>
     </div>

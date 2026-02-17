@@ -221,7 +221,10 @@ export function useWordbook(): UseWordbookReturn {
   }, [])
 
   // 组件挂载时获取列表
+  // 💡 导师小课堂：useEffect 在组件挂载时执行，确保每次打开插件都能加载最新的生词本数据
+  // chrome.storage.local 是持久化存储，数据会一直保存，所以这里读取的是之前保存的所有数据
   useEffect(() => {
+    console.log('[useWordbook] 组件挂载，开始加载生词本数据')
     fetchWords()
   }, [fetchWords])
 

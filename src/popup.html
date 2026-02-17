@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context AI - API 设置</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      width: 360px;
+      max-height: 560px;
+      margin: 0;
+      padding: 16px 18px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      color: #37352f;
+      background: #fafafa;
+      overflow-y: auto;
+    }
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 16px 0;
+      color: #37352f;
+      letter-spacing: -0.02em;
+    }
+    .section {
+      margin-bottom: 18px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      border: 1px solid rgba(55,53,47,0.09);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #787774;
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #37352f;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid rgba(55,53,47,0.16);
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      background: #fff;
+      color: #37352f;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23787774' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    select:hover { border-color: rgba(55,53,47,0.24); }
+    select:focus { outline: none; border-color: #2383e2; box-shadow: 0 0 0 2px rgba(35,131,226,0.2); }
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid rgba(55,53,47,0.16);
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 10px;
+      background: #fff;
+      color: #37352f;
+    }
+    input::placeholder { color: #9b9a97; }
+    input:hover { border-color: rgba(55,53,47,0.24); }
+    input:focus {
+      outline: none;
+      border-color: #2383e2;
+      box-shadow: 0 0 0 2px rgba(35,131,226,0.2);
+    }
+    .api-key-hint {
+      font-size: 11px;
+      color: #9b9a97;
+      margin-top: -8px;
+      margin-bottom: 10px;
+      line-height: 1.4;
+      transition: opacity 0.2s ease;
+    }
+    .api-key-hint.empty {
+      color: #787774;
+    }
+    input:focus + .api-key-hint.empty {
+      color: #2383e2;
+    }
+    .optional-label { font-size: 11px; color: #9b9a97; margin-top: 2px; margin-bottom: 4px; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 12px; color: #37352f; cursor: pointer; }
+    .checkbox-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+    .disclaimer {
+      font-size: 11px;
+      color: #9b9a97;
+      line-height: 1.5;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(55,53,47,0.09);
+    }
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      background: #2383e2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btn:hover { background: #1a73c9; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary {
+      background: #fff;
+      color: #37352f;
+      border: 1px solid rgba(55,53,47,0.2);
+    }
+    .btn-secondary:hover { background: rgba(55,53,47,0.06); }
+    .save-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    #saveHint {
+      font-size: 12px;
+      color: #0f7b6c;
+      display: none;
+    }
+    #saveHint.visible { display: inline; }
+    .tip {
+      font-size: 12px;
+      color: #787774;
+      line-height: 1.5;
+      margin: 0 0 10px 0;
+    }
+    .tip strong { color: #37352f; }
+  </style>
+</head>
+<body>
+  <h1>Context AI</h1>
+
+  <div class="section">
+    <div class="section-title">API 设置</div>
+    <label for="selectedProvider">选择服务商</label>
+    <select id="selectedProvider">
+      <option value="qwen">通义千问</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="doubao">豆包</option>
+      <option value="kimi">Kimi</option>
+      <option value="zhipu">智谱 GLM</option>
+      <option value="gemini">Gemini</option>
+      <option value="openai">ChatGPT (OpenAI)</option>
+      <option value="grok">Grok (xAI)</option>
+    </select>
+    <label for="apiKeyInput">API Key</label>
+    <input type="password" id="apiKeyInput" placeholder="请填入你的 API Key" autocomplete="off" />
+    <div id="apiKeyHint" class="api-key-hint" style="display: none; font-size: 11px; color: #9b9a97; margin-top: -8px; margin-bottom: 10px; line-height: 1.4;">
+      请填入你的 API Key 以使用翻译功能
+    </div>
+    <label for="baseUrlInput" class="optional-label">Base URL（可选）</label>
+    <input type="text" id="baseUrlInput" placeholder="留空则使用默认地址" />
+    <label for="modelInput" class="optional-label">Model（可选）</label>
+    <input type="text" id="modelInput" placeholder="留空则使用默认模型" />
+    <label class="checkbox-row">
+      <input type="checkbox" id="preTranslateOnly" />
+      <span>仅预翻译（不调用大模型，秒出结果，无需 API Key）</span>
+    </label>
+    <div class="save-row">
+      <button type="button" class="btn" id="saveBtn">保存并开始使用</button>
+      <span id="saveHint">已保存</span>
+    </div>
+    <p class="disclaimer">密钥仅存于本地，不会上传。未填写时千问可读环境变量。</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">使用说明</div>
+    <p class="tip">在任意网页<strong>选中 2 字以上</strong>，浮动栏会出现在选区旁，点击「翻译」或「发音」即可。若无法弹出，请：1）确认是从扩展的 <strong>dist 目录</strong>加载；2）将扩展「网站权限」设为「在所有网站上」并<strong>刷新该网页</strong>。</p>
+    <button type="button" class="btn btn-secondary" id="openSettings">打开扩展设置页</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

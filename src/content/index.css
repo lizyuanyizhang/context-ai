@@ -1,86 +1,87 @@
 /**
- * Content Script 的全局样式
- * 
- * 使用 Tailwind CSS 的 @tailwind 指令引入基础样式
- * 这些样式会被注入到网页中，所以需要小心命名，避免与网页原有样式冲突
- * 
- * 设计风格：苹果风格 + 森林风格
- * - 苹果风格：毛玻璃效果、大圆角、柔和阴影、简洁优雅
- * - 森林风格：自然绿色系、清新感、有机感
+ * Content Script 全局样式
+ *
+ * 设计风格：Notion 风格 + 日式简约
+ * - Notion：白底、灰阶文字、蓝色强调、细线分割、充足留白
+ * - 日式（間/Kanso）：留白、克制用色、仅保留必要元素
  */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/**
- * 苹果风格 + 森林风格的颜色变量
- * 定义一套统一的颜色系统，确保整个UI的一致性
- */
+/* ========== 豆包风格设计令牌（优化版） ========== */
 :root {
-  /* 森林绿色系 */
-  --forest-dark: #2d5016;      /* 深森林绿 */
-  --forest-medium: #4a7c59;    /* 中森林绿 */
-  --forest-light: #6b9f78;     /* 浅森林绿 */
-  --forest-pale: #8fb99f;      /* 淡森林绿 */
-  --forest-accent: #34c759;    /* 强调绿（苹果绿） */
-  --forest-accent-hover: #30d158; /* 强调绿悬停 */
+  /* 背景（豆包风格：更纯净的白色） */
+  --notion-bg: #ffffff;
+  --notion-bg-warm: #fafafa;
+  --notion-surface: #f8f8f8;
+
+  /* 文字层级（豆包风格：更柔和的对比度） */
+  --notion-text: #1a1a1a;
+  --notion-text-secondary: #666666;
+  --notion-text-tertiary: #999999;
+
+  /* 强调色（豆包风格：更现代的蓝色，带渐变） */
+  --notion-accent: #1890ff;
+  --notion-accent-hover: #40a9ff;
+  --notion-accent-gradient: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+
+  /* 边框与分割（豆包风格：更细腻的边框） */
+  --notion-border: rgba(0, 0, 0, 0.06);
+  --notion-border-strong: rgba(0, 0, 0, 0.12);
+
+  /* 交互（豆包风格：更柔和的 hover 效果） */
+  --notion-hover: rgba(0, 0, 0, 0.04);
+  --notion-hover-strong: rgba(0, 0, 0, 0.08);
+  --notion-disabled: #d9d9d9;
+
+  /* 语义色（豆包风格：更柔和的颜色） */
+  --notion-error: #ff4d4f;
+  --notion-success: #52c41a;
+  --notion-warning: #faad14;
   
-  /* 苹果灰色系 */
-  --apple-bg: #f5f5f7;         /* 苹果背景灰 */
-  --apple-surface: #ffffff;    /* 苹果表面白 */
-  --apple-border: #e8e8ed;      /* 苹果边框灰 */
-  --apple-text: #1d1d1f;       /* 苹果文字黑 */
-  --apple-text-secondary: #424245; /* 苹果次要文字 */
-  
-  /* 毛玻璃效果 */
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.2);
-  --glass-shadow: rgba(0, 0, 0, 0.1);
+  /* 特色：品牌渐变色 */
+  --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --brand-gradient-subtle: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+
+  /* 兼容旧变量名（供未替换处使用） */
+  --forest-dark: #37352f;
+  --forest-medium: #787774;
+  --forest-accent: #2383e2;
+  --forest-accent-hover: #1a73c9;
+  --apple-bg: #fafafa;
+  --apple-surface: #ffffff;
+  --apple-border: #e8e8e8;
+  --apple-text: #37352f;
+  --apple-text-secondary: #787774;
+  --glass-bg: rgba(255, 255, 255, 0.95);
+  --glass-border: rgba(55, 53, 47, 0.09);
+  --glass-shadow: rgba(0, 0, 0, 0.06);
 }
 
-/**
- * 重置样式：确保我们的组件不受网页原有样式影响
- * 使用高优先级的选择器，确保样式生效
- */
 #context-ai-root {
-  /* 重置盒模型：确保 padding 和 border 不会影响元素尺寸 */
   box-sizing: border-box;
-  
-  /* 字体重置：使用系统默认字体栈，确保在不同网站都能正常显示 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  
-  /* 文字渲染优化：让文字更清晰 */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  
-  /* 确保我们的元素在最上层显示（z-index 会在组件中设置） */
   position: relative;
   z-index: 999999;
 }
 
-/**
- * 防止网页样式影响我们的组件
- * 使用 all: initial 重置所有 CSS 属性，然后只应用我们需要的样式
- */
 #context-ai-root * {
   box-sizing: border-box;
 }
 
-/**
- * 浮动工具栏容器动画（线条风格）
- * 添加淡入和轻微的上浮动画效果
- */
+/* ========== 浮动工具栏（豆包风格优化） ========== */
 .context-ai-floating-button-container {
-  animation: contextAiFadeInUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: contextAiFadeInUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); /* 豆包风格：更流畅的弹性动画 */
 }
 
 @keyframes contextAiFadeInUp {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px) scale(0.95);
+    transform: translateX(-50%) translateY(8px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -88,37 +89,44 @@
   }
 }
 
-/**
- * 选中文字高亮样式
- * 这个类用于高亮覆盖层
- */
+/* 特色：微妙的脉冲动画（用于强调重要操作） */
+@keyframes subtlePulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* 特色：渐变背景动画（用于特殊按钮） */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .context-ai-selection-highlight {
-  /* 样式在 JavaScript 中动态设置，这里只定义基础样式 */
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-/**
- * 翻译面板遮罩层淡入动画
- * 避免全屏黑屏闪动
- */
+/* ========== 翻译面板动画 ========== */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/**
- * 翻译面板内容滑入动画
- * 让面板出现更平滑（苹果风格）
- */
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(30px) scale(0.95);
+    transform: translateY(20px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -126,58 +134,55 @@
   }
 }
 
-/**
- * 毛玻璃效果样式类（苹果风格）
- * 用于创建高级的毛玻璃背景效果
- */
-.glass-effect {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 32px var(--glass-shadow);
+/* ========== Notion 风格通用类 ========== */
+.notion-panel {
+  background: var(--notion-bg);
+  border: 1px solid var(--notion-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
 }
 
-/**
- * 森林风格卡片样式
- * 用于创建清新、自然的卡片效果
- */
-.forest-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(245, 250, 245, 0.95) 100%);
-  border: 1px solid rgba(107, 159, 120, 0.2);
-  box-shadow: 0 4px 20px rgba(45, 80, 22, 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+.notion-card {
+  background: var(--notion-bg-warm);
+  border: 1px solid var(--notion-border);
+  border-radius: 6px;
+  transition: background 0.15s ease;
 }
 
-.forest-card:hover {
-  box-shadow: 0 8px 30px rgba(45, 80, 22, 0.12);
-  transform: translateY(-2px);
+.notion-card:hover {
+  background: rgba(55, 53, 47, 0.04);
 }
 
-/**
- * 苹果风格按钮样式
- * 精致的按钮设计，带有微妙的阴影和过渡效果
- */
-.apple-button {
-  background: linear-gradient(135deg, var(--forest-accent) 0%, var(--forest-accent-hover) 100%);
-  box-shadow: 0 4px 14px rgba(52, 199, 89, 0.3);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.notion-divider {
+  height: 1px;
+  background: var(--notion-border);
 }
 
-.apple-button:hover {
-  box-shadow: 0 6px 20px rgba(52, 199, 89, 0.4);
-  transform: translateY(-1px);
+.notion-btn-primary {
+  background: var(--notion-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  transition: background 0.15s ease;
 }
 
-.apple-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 10px rgba(52, 199, 89, 0.3);
+.notion-btn-primary:hover:not(:disabled) {
+  background: var(--notion-accent-hover);
 }
 
-/**
- * 闪卡翻转效果
- * 用于3D翻转动画
- */
+.notion-btn-secondary {
+  background: var(--notion-bg);
+  color: var(--notion-text);
+  border: 1px solid var(--notion-border-strong);
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.notion-btn-secondary:hover {
+  background: var(--notion-hover);
+}
+
+/* 闪卡 3D 翻转 */
 .perspective-1000 {
   perspective: 1000px;
   -webkit-perspective: 1000px;

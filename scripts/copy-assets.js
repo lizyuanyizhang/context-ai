@@ -17,14 +17,25 @@ const srcCss = `${rootDir}/src/content/index.css`
 const distCssDir = `${rootDir}/dist/src/content`
 const distCss = `${distCssDir}/index.css`
 
+// 复制 popup.js（popup 使用外部脚本以通过扩展 CSP，避免「打开扩展设置页」点不动）
+const srcPopupJs = `${rootDir}/src/popup.js`
+const distSrcDir = `${rootDir}/dist/src`
+const distPopupJs = `${rootDir}/dist/src/popup.js`
+
 try {
-  // 创建目录（如果不存在）
   mkdirSync(distCssDir, { recursive: true })
-  
-  // 复制文件
   copyFileSync(srcCss, distCss)
   console.log('✅ CSS 文件已复制到 dist 目录')
 } catch (error) {
   console.error('❌ 复制 CSS 文件失败：', error.message)
+  process.exit(1)
+}
+
+try {
+  mkdirSync(distSrcDir, { recursive: true })
+  copyFileSync(srcPopupJs, distPopupJs)
+  console.log('✅ popup.js 已复制到 dist 目录')
+} catch (error) {
+  console.error('❌ 复制 popup.js 失败：', error.message)
   process.exit(1)
 }

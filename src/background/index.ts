@@ -17,8 +17,13 @@
  * - 集中管理 API 调用，便于错误处理和重试
  */
 
-import { translateText, detectTextLanguage, QwenApiError } from '../services/qwenApi'
+import { translateTextWithConfig, enhanceTranslationWithConfig, detectTextLanguage, QwenApiError } from '../services/qwenApi'
+import { getApiConfig } from '../services/apiConfig'
+import { PROVIDER_MAP } from '../config/providers'
+import type { ProviderId } from '../config/providers'
+import { QWEN_API_BASE_URL, QWEN_API_KEY, QWEN_MODEL } from '../config/api'
 import { wordbookService } from '../services/wordbook'
+import { preTranslate } from '../services/preTranslate'
 
 // 监听来自 Content Script 的消息
 // chrome.runtime.onMessage：Chrome Extension API，用于接收消息
@@ -27,34 +32,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // sender：发送消息的上下文信息（如标签页 ID）
   // sendResponse：回调函数，用于回复消息
 
-  // 处理翻译请求
+  // 处理翻译请求（先预翻译再大模型增强，降低等待时间）
   if (message.type === 'TRANSLATE') {
-    // 异步处理：调用通义千问 API
-    // 注意：异步操作必须返回 true，表示会异步调用 sendResponse
-    handleTranslateRequest(message.text, message.sourceLang)
+    const tabId = sender.tab?.id
+    handleTranslateRequest(message.text, message.sourceLang, tabId, message.targetLang)
       .then((result) => {
-        // 成功：返回翻译结果
         sendResponse({
           success: true,
           data: result
         })
       })
       .catch((error) => {
-        // 失败：返回错误信息
         console.error('翻译失败：', error)
         sendResponse({
           success: false,
           error: {
-            message: error instanceof QwenApiError 
-              ? error.message 
+            message: error instanceof QwenApiError
+              ? error.message
               : '翻译失败，请稍后重试',
             code: error instanceof QwenApiError ? error.code : 'UNKNOWN_ERROR'
           }
         })
       })
-    
-    // 返回 true 表示会异步调用 sendResponse
-    // 这是 Chrome Extension 消息传递的要求
     return true
   }
 
@@ -231,27 +230,139 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 })
 
 /**
- * 处理翻译请求
- * 
- * @param text - 要翻译的文本
- * @param sourceLang - 源语言（可选，如果不提供会自动检测）
- * @returns 翻译结果
+ * 处理翻译请求：先尝试 LibreTranslate 预翻译（即时展示），再用大模型补充语法/语境/音标
+ * 类比：Google 翻译等产品用「小模型/规则 + 缓存」先返回，再大模型做质量增强
  */
 async function handleTranslateRequest(
   text: string,
-  sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es'
+  sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh',
+  tabId?: number,
+  targetLang: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh' = 'zh'
 ): Promise<any> {
-  // 如果没有指定源语言，自动检测
-  const detectedLang = sourceLang || detectTextLanguage(text)
+  // 确定源语言：如果指定了 sourceLang 且不是 'zh'，使用指定的；否则检测
+  let detectedLang: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh'
+  if (sourceLang && sourceLang !== 'zh') {
+    detectedLang = sourceLang
+  } else if (sourceLang === 'zh') {
+    detectedLang = 'zh'
+  } else {
+    detectedLang = detectTextLanguage(text)
+  }
   
-  // 调用翻译 API
-  const result = await translateText(text, detectedLang)
+  const config = await getApiConfig()
   
-  // 添加原始文本和检测到的语言
+  // 实际源语言：如果检测到中文，使用中文；否则使用检测到的语言
+  const actualSourceLang = detectedLang === 'zh' ? 'zh' : detectedLang
+
+  // 仅预翻译模式：只调 LibreTranslate，不调用大模型，无需 API Key，秒出结果
+  if (config.preTranslateOnly) {
+    try {
+      // 预翻译需要根据目标语言调整
+      const preTranslateSourceLang = targetLang !== 'zh' ? 'zh' : detectedLang
+      const draft = await preTranslate(text, preTranslateSourceLang, targetLang)
+      if (tabId != null) {
+        chrome.tabs.sendMessage(tabId, {
+          type: 'TRANSLATE_PARTIAL',
+          data: {
+            translation: draft.translation,
+            originalText: text,
+            grammar: undefined,
+            context: undefined,
+            phonetic: undefined,
+            pronunciation: undefined
+          }
+        }).catch(() => {})
+      }
+      return {
+        translation: draft.translation,
+        grammar: undefined,
+        context: undefined,
+        phonetic: undefined,
+        pronunciation: undefined,
+        originalText: text,
+        detectedLang
+      }
+    } catch (e) {
+      throw new QwenApiError(
+        '预翻译失败，请检查网络或关闭「仅预翻译」后使用大模型。',
+        'PRE_TRANSLATE_FAILED'
+      )
+    }
+  }
+
+  const providerId = config.selectedProvider as ProviderId
+  const def = PROVIDER_MAP[providerId]
+  const opt = config.providers[providerId]
+  let baseUrl = (opt?.baseUrl && opt.baseUrl.trim()) ? opt.baseUrl.trim() : (def?.defaultBaseUrl ?? '')
+  let model = (opt?.model && opt.model.trim()) ? opt.model.trim() : (def?.defaultModel ?? '')
+  let apiKey = opt?.apiKey?.trim() ?? ''
+  if (providerId === 'qwen') {
+    if (!apiKey && QWEN_API_KEY) apiKey = QWEN_API_KEY
+    if (!baseUrl) baseUrl = QWEN_API_BASE_URL
+    if (!model) model = QWEN_MODEL
+  }
+
+  if (!apiKey) {
+    throw new QwenApiError(
+      `未配置「${def?.name ?? providerId}」的 API Key。请点击扩展图标，在 API 设置中填写。`,
+      'MISSING_API_KEY'
+    )
+  }
+
+  const providerConfig = { baseUrl, apiKey, model }
+
+  // 1. 预翻译：LibreTranslate 先出译文（可选）
+  let draft: { translation: string } | null = null
+  try {
+    draft = await preTranslate(text, actualSourceLang, targetLang)
+    if (draft && tabId != null) {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'TRANSLATE_PARTIAL',
+        data: {
+          translation: draft.translation,
+          originalText: text,
+          grammar: undefined,
+          context: undefined,
+          phonetic: undefined,
+          pronunciation: undefined
+        }
+      }).catch(() => {})
+    }
+  } catch (_) {
+    // 预翻译失败则只走大模型
+  }
+
+  // 2. 大模型：增强或完整翻译；超时/失败时若有初稿则返回初稿
+  let result: any
+  try {
+    // 如果源语言是中文，enhanceTranslationWithConfig 需要特殊处理（目前只支持外语→中文）
+    // 对于中文→其他语言或其他语言之间的翻译，使用完整翻译
+    if (actualSourceLang === 'zh' || targetLang !== 'zh') {
+      // 中文→其他语言或其他语言之间的翻译，使用完整翻译
+      result = await translateTextWithConfig(providerConfig, text, actualSourceLang, targetLang)
+    } else {
+      // 外语→中文，可以使用预翻译增强
+      result = draft
+        ? await enhanceTranslationWithConfig(providerConfig, text, actualSourceLang as 'en' | 'de' | 'fr' | 'ja' | 'es', draft.translation)
+        : await translateTextWithConfig(providerConfig, text, actualSourceLang as 'en' | 'de' | 'fr' | 'ja' | 'es', targetLang)
+    }
+  } catch (err) {
+    if (draft) {
+      result = {
+        translation: draft.translation,
+        grammar: undefined,
+        context: undefined,
+        phonetic: undefined,
+        pronunciation: undefined
+      }
+    } else {
+      throw err
+    }
+  }
   return {
     ...result,
     originalText: text,
-    detectedLang: detectedLang
+    detectedLang
   }
 }
 

@@ -53,49 +53,14 @@ interface LanguageConfig {
  * - 正常语速（rate 1.0）比慢速（0.9）更自然、更有活力
  * - 这些参数组合能让声音听起来更年轻、更自然
  */
+// 语速 0.95 更清晰、不易吞字；pitch 1.0 避免尖细/机械感（参考：过高易像“鸭子声”）
 const LANGUAGE_CONFIGS: Record<SupportedLanguage, LanguageConfig> = {
-  // 英语配置（优化为更年轻自然的语音）
-  en: {
-    lang: 'en-US', // 美式英语（也可以使用 'en-GB' 英式英语）
-    rate: 1.0, // 正常语速，更接近真实人声（年轻人口语速度）
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力（1.0 太机械，1.2 太高）
-    volume: 1.0 // 最大音量
-  },
-  // 德语配置（优化为更年轻自然的语音）
-  de: {
-    lang: 'de-DE', // 标准德语
-    rate: 1.0, // 正常语速，更接近真实人声
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力
-    volume: 1.0 // 最大音量
-  },
-  // 中文配置（优化为更年轻自然的语音）
-  zh: {
-    lang: 'zh-CN', // 简体中文（也可以使用 'zh-TW' 繁体中文）
-    rate: 1.0, // 正常语速，更接近真实人声
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力
-    volume: 1.0 // 最大音量
-  },
-  // 法语配置（优化为更年轻自然的语音）
-  fr: {
-    lang: 'fr-FR', // 标准法语（也可以使用 'fr-CA' 加拿大法语）
-    rate: 1.0, // 正常语速，更接近真实人声
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力
-    volume: 1.0 // 最大音量
-  },
-  // 日语配置（优化为更年轻自然的语音）
-  ja: {
-    lang: 'ja-JP', // 标准日语
-    rate: 1.0, // 正常语速，更接近真实人声
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力
-    volume: 1.0 // 最大音量
-  },
-  // 西班牙语配置（优化为更年轻自然的语音）
-  es: {
-    lang: 'es-ES', // 标准西班牙语（也可以使用 'es-MX' 墨西哥西班牙语）
-    rate: 1.0, // 正常语速，更接近真实人声
-    pitch: 1.12, // 提高音调，让声音更年轻、更有活力
-    volume: 1.0 // 最大音量
-  }
+  en: { lang: 'en-US', rate: 0.95, pitch: 1.0, volume: 1.0 },
+  de: { lang: 'de-DE', rate: 0.95, pitch: 1.0, volume: 1.0 },
+  zh: { lang: 'zh-CN', rate: 0.95, pitch: 1.0, volume: 1.0 },
+  fr: { lang: 'fr-FR', rate: 0.95, pitch: 1.0, volume: 1.0 },
+  ja: { lang: 'ja-JP', rate: 0.95, pitch: 1.0, volume: 1.0 },
+  es: { lang: 'es-ES', rate: 0.95, pitch: 1.0, volume: 1.0 }
 }
 
 /**
@@ -365,20 +330,37 @@ class TTSManager {
     }
 
     // 获取所有可用的语音
-    // 注意：在某些浏览器中，首次调用可能返回空数组
-    // 需要等待 voiceschanged 事件
     const voices = this.synthesis.getVoices()
     
-    // 如果指定了语言，过滤出该语言的语音
-    if (lang) {
-      const langPrefix = lang.split('-')[0].toLowerCase() // 'zh-CN' -> 'zh'
-      return voices.filter(voice => {
-        const voiceLang = voice.lang.toLowerCase()
-        return voiceLang.startsWith(langPrefix)
-      })
+    if (!lang) {
+      return voices
     }
-    
-    return voices
+
+    const langPrefix = lang.split('-')[0].toLowerCase() // 'zh-CN' -> 'zh'
+    const langRegion = (lang.split('-')[1] || '').toLowerCase() // 'en-US' -> 'us'
+    let list = voices.filter(voice => {
+      const voiceLang = voice.lang.toLowerCase()
+      return voiceLang.startsWith(langPrefix)
+    })
+
+    // 英语时优先美/英口音，排除印度英语（en-IN），避免误选成印度口音
+    if (langPrefix === 'en' && list.length > 1) {
+      const noIndia = list.filter(v => {
+        const vLang = v.lang.toLowerCase()
+        const isIndia = vLang === 'en-in' || vLang.includes('india') || (v.name && v.name.toLowerCase().includes('india'))
+        return !isIndia
+      })
+      if (noIndia.length > 0) {
+        list = noIndia
+      }
+      // 进一步优先 en-US，其次 en-GB
+      const us = list.filter(v => v.lang.toLowerCase().startsWith('en-us'))
+      const gb = list.filter(v => v.lang.toLowerCase().startsWith('en-gb'))
+      const rest = list.filter(v => !v.lang.toLowerCase().startsWith('en-us') && !v.lang.toLowerCase().startsWith('en-gb'))
+      list = [...us, ...gb, ...rest]
+    }
+
+    return list
   }
   
   /**
@@ -525,40 +507,18 @@ class TTSManager {
       
       // 如果缓存中没有，或者缓存的语音不在可用列表中，重新选择
       if (!selectedVoice || !availableVoices.includes(selectedVoice)) {
-        // 1. 优先选择本地语音（localService = true），质量更好
-        selectedVoice = availableVoices.find(voice => voice.localService)
-        
-        // 2. 如果没有本地语音，尝试选择更自然的语音
-        // 通常名称中包含 "Enhanced"、"Premium"、"Natural"、"Neural" 的语音质量更好
-        if (!selectedVoice) {
-          selectedVoice = availableVoices.find(voice => 
-            voice.name.toLowerCase().includes('enhanced') ||
-            voice.name.toLowerCase().includes('premium') ||
-            voice.name.toLowerCase().includes('natural') ||
-            voice.name.toLowerCase().includes('neural')
-          )
+        // 按「自然度」打分：Neural/Premium/Enhanced/Google 等优先，避免 Compact/Mobile 等机械声
+        const score = (v: SpeechSynthesisVoice): number => {
+          const n = v.name.toLowerCase()
+          if (n.includes('neural') || n.includes('premium') || n.includes('enhanced') || n.includes('natural')) return 100
+          if (n.includes('google ') || n.includes('samantha') || n.includes('daniel') || n.includes('zira')) return 90
+          if (n.includes('female') || n.includes('karen') || n.includes('tessa') || n.includes('victoria')) return 70
+          if (v.localService) return 60
+          if (n.includes('compact') || n.includes('mobile') || n.includes('robotic')) return 10
+          return 50
         }
-        
-        // 3. 如果还是没有，优先选择女性语音（通常更自然、更年轻）
-        // 常见的年轻女性语音名称
-        if (!selectedVoice) {
-          selectedVoice = availableVoices.find(voice => {
-            const name = voice.name.toLowerCase()
-            return name.includes('female') ||
-                   name.includes('samantha') ||
-                   name.includes('karen') ||
-                   name.includes('zira') ||
-                   name.includes('tessa') ||
-                   name.includes('victoria') ||
-                   name.includes('susan') ||
-                   name.includes('sarah')
-          })
-        }
-        
-        // 4. 如果还是没有，选择第一个可用语音
-        if (!selectedVoice) {
-          selectedVoice = availableVoices[0]
-        }
+        const sorted = [...availableVoices].sort((a, b) => score(b) - score(a))
+        selectedVoice = sorted[0]
         
         // 缓存选择的语音，确保同一语言使用同一个语音引擎
         if (selectedVoice) {

@@ -9,7 +9,7 @@
  * 5. 查看单词详情
  */
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Search, Trash2, Download, X, BookOpen, Volume2, VolumeX, Play } from 'lucide-react'
 import { WordbookEntry } from '../../services/wordbook'
 import { useWordbook } from '../hooks/useWordbook'
@@ -38,6 +38,13 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   
   // 是否显示闪卡学习模式
   const [showFlashcardMode, setShowFlashcardMode] = useState(false)
+
+  // 每次打开面板时刷新列表，确保从工具栏「加入生词本」后能看到刚加入的条目
+  useEffect(() => {
+    if (isOpen) {
+      refresh()
+    }
+  }, [isOpen, refresh])
 
   // 过滤后的单词列表（根据搜索关键词）
   const filteredWords = useMemo(() => {
@@ -188,345 +195,239 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   }
 
   return (
-    <div 
+    <div
       className="fixed inset-0 flex items-center justify-center z-[1000002]"
       style={{
-        // 苹果风格遮罩：使用更柔和的绿色调，营造森林感
-        background: 'linear-gradient(135deg, rgba(45, 80, 22, 0.3) 0%, rgba(107, 159, 120, 0.2) 100%)',
-        // 添加平滑的过渡动画，避免闪动
-        animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        // 使用更强的毛玻璃效果（苹果风格）
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        // 确保遮罩层不会阻止点击关闭
+        background: 'rgba(0, 0, 0, 0.2)', // 豆包风格：更柔和的遮罩
+        animation: 'fadeIn 0.25s ease',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         pointerEvents: 'auto'
       }}
-      onClick={(e) => {
-        // 点击遮罩层时关闭面板
-        if (e.target === e.currentTarget) {
-          onClose()
-        }
-      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div 
-        className="glass-effect rounded-3xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col"
+      <div
+        className="notion-panel w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col overflow-hidden"
         style={{
-          // 添加面板出现的动画（苹果风格：缩放+滑入）
-          animation: 'slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          // 阻止点击事件冒泡到遮罩层
+          padding: 0,
+          borderRadius: '16px', // 豆包风格：更大的圆角
+          background: 'rgba(255, 255, 255, 0.98)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06)',
+          border: '1px solid rgba(0, 0, 0, 0.06)',
+          animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           pointerEvents: 'auto'
         }}
-        onClick={(e) => {
-          // 阻止点击面板内容时关闭
-          e.stopPropagation()
-        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* 头部（苹果风格） */}
-        <div className="flex items-center justify-between p-6" style={{ borderBottom: '1px solid rgba(107, 159, 120, 0.2)' }}>
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--notion-border)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(52, 199, 89, 0.15) 0%, rgba(107, 159, 120, 0.1) 100%)' }}>
-              <BookOpen className="w-5 h-5" style={{ color: 'var(--forest-medium)' }} />
+            <div className="w-9 h-9 rounded-md flex items-center justify-center" style={{ background: 'var(--notion-hover)' }}>
+              <BookOpen className="w-4 h-4" style={{ color: 'var(--notion-text-secondary)' }} strokeWidth={2} />
             </div>
             <div>
-              <h2 className="text-2xl font-semibold" style={{ color: 'var(--forest-dark)' }}>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--notion-text)' }}>
                 生词本
               </h2>
-              <span className="text-sm font-medium" style={{ color: 'var(--apple-text-secondary)' }}>
+              <span className="text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
                 {filteredWords.length} 个单词
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-            style={{ color: 'var(--apple-text-secondary)' }}
+            className="w-8 h-8 flex items-center justify-center rounded transition-colors"
+            style={{ color: 'var(--notion-text-secondary)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--notion-hover)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             aria-label="关闭"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
 
-        {/* 工具栏（苹果风格） */}
-        <div className="p-6 space-y-3" style={{ borderBottom: '1px solid rgba(107, 159, 120, 0.2)' }}>
-          {/* 搜索框（苹果风格） */}
+        {/* 工具栏 */}
+        <div className="px-5 py-3 space-y-3" style={{ borderBottom: '1px solid var(--notion-border)' }}>
           <div className="flex items-center gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: 'var(--apple-text-secondary)' }} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--notion-text-tertiary)' }} strokeWidth={2} />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => handleSearch(e.target.value)}
                 placeholder="搜索单词..."
-                className="w-full pl-11 pr-4 py-3 rounded-2xl transition-all duration-200"
+                className="w-full pl-9 pr-3 py-2 rounded text-sm outline-none transition-colors"
                 style={{
-                  border: '1px solid rgba(107, 159, 120, 0.2)',
-                  background: 'rgba(255, 255, 255, 0.6)',
-                  color: 'var(--apple-text)',
-                  fontSize: '14px'
+                  border: '1px solid var(--notion-border-strong)',
+                  background: 'var(--notion-bg)',
+                  color: 'var(--notion-text)'
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--forest-accent)'
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(52, 199, 89, 0.1)'
+                  e.currentTarget.style.borderColor = 'var(--notion-accent)'
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(107, 159, 120, 0.2)'
-                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.borderColor = 'var(--notion-border-strong)'
                 }}
               />
             </div>
             {selectedIds.size > 0 && (
               <button
                 onClick={handleBatchDelete}
-                className="px-4 py-2.5 text-white rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
+                className="px-3 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors"
                 style={{
-                  background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%)',
-                  boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(255, 107, 107, 0.4)'
-                  e.currentTarget.style.transform = 'translateY(-1px)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 107, 107, 0.3)'
-                  e.currentTarget.style.transform = 'translateY(0)'
+                  background: 'var(--notion-error)',
+                  color: '#fff',
+                  border: 'none'
                 }}
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-4 h-4" strokeWidth={2} />
                 删除选中 ({selectedIds.size})
               </button>
             )}
             <button
               onClick={() => handleExport('json')}
-              className="px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.1)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent'
-              }}
+              className="notion-btn-secondary px-3 py-2 text-sm font-medium flex items-center gap-2"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4" strokeWidth={2} />
               导出 JSON
             </button>
             <button
               onClick={() => handleExport('csv')}
-              className="px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
-              style={{
-                border: '1px solid rgba(107, 159, 120, 0.3)',
-                color: 'var(--forest-medium)',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(107, 159, 120, 0.1)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent'
-              }}
+              className="notion-btn-secondary px-3 py-2 text-sm font-medium flex items-center gap-2"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4" strokeWidth={2} />
               导出 CSV
             </button>
             <button
               onClick={() => setShowFlashcardMode(true)}
-              className="px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
-              style={{
-                background: 'linear-gradient(135deg, var(--forest-accent) 0%, rgba(52, 199, 89, 0.8) 100%)',
-                color: 'white',
-                boxShadow: '0 4px 12px rgba(52, 199, 89, 0.3)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 6px 16px rgba(52, 199, 89, 0.4)'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(52, 199, 89, 0.3)'
-                e.currentTarget.style.transform = 'translateY(0)'
-              }}
+              className="notion-btn-primary px-3 py-2 text-sm font-medium flex items-center gap-2"
             >
-              <Play className="w-4 h-4" />
+              <Play className="w-4 h-4" strokeWidth={2} />
               学习模式
             </button>
           </div>
         </div>
 
-        {/* 内容区域（苹果风格滚动条） */}
-        <div className="flex-1 overflow-y-auto p-6" style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: 'rgba(107, 159, 120, 0.3) transparent'
-        }}>
-          {/* 加载状态（苹果风格） */}
+        <div className="flex-1 overflow-y-auto px-5 py-4" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--notion-border-strong) transparent' }}>
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-12">
-              <div className="relative">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-transparent border-t-current" style={{ color: 'var(--forest-accent)' }}></div>
-                <div className="absolute inset-0 w-8 h-8 border-2 border-transparent border-t-current rounded-full animate-spin opacity-50" style={{ color: 'var(--forest-accent)' }}></div>
-              </div>
-              <span className="mt-4 text-sm font-medium" style={{ color: 'var(--apple-text-secondary)' }}>
-                加载中...
-              </span>
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-transparent border-t-current" style={{ color: 'var(--notion-accent)' }} />
+              <span className="mt-3 text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>加载中...</span>
             </div>
           )}
 
-          {/* 错误状态（苹果风格） */}
           {error && !isLoading && (
-            <div className="forest-card p-5 rounded-2xl border-l-4" style={{ borderLeftColor: '#ff6b6b' }}>
-              <p style={{ color: '#ff6b6b' }}>{error}</p>
+            <div className="notion-card p-4 border-l-4" style={{ borderLeftColor: 'var(--notion-error)' }}>
+              <p className="text-sm" style={{ color: 'var(--notion-text-secondary)' }}>{error}</p>
             </div>
           )}
 
-          {/* 空状态（苹果风格） */}
           {!isLoading && !error && filteredWords.length === 0 && (
-            <div className="text-center py-16">
-              <div className="w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center" style={{ background: 'rgba(107, 159, 120, 0.1)' }}>
-                <BookOpen className="w-10 h-10" style={{ color: 'var(--forest-medium)' }} />
+            <div className="text-center py-14">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-md flex items-center justify-center" style={{ background: 'var(--notion-hover)' }}>
+                <BookOpen className="w-7 h-7" style={{ color: 'var(--notion-text-tertiary)' }} strokeWidth={2} />
               </div>
-              <p className="text-lg font-semibold mb-2" style={{ color: 'var(--apple-text)' }}>
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--notion-text)' }}>
                 {searchQuery ? '没有找到匹配的单词' : '生词本为空'}
               </p>
-              <p className="text-sm" style={{ color: 'var(--apple-text-secondary)' }}>
-                {searchQuery ? '尝试使用其他关键词搜索' : '选中网页上的文字并保存到生词本'}
+              <p className="text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
+                {searchQuery ? '尝试其他关键词' : '选中网页文字并保存到生词本'}
               </p>
             </div>
           )}
 
-          {/* 单词列表 */}
           {!isLoading && !error && filteredWords.length > 0 && (
-            <div className="space-y-3">
-              {/* 全选按钮（苹果风格） */}
+            <div className="space-y-2">
               {filteredWords.length > 0 && (
-                <div className="flex items-center gap-3 pb-4 mb-4" style={{ borderBottom: '1px solid rgba(107, 159, 120, 0.2)' }}>
+                <div className="flex items-center gap-2 pb-3 mb-3" style={{ borderBottom: '1px solid var(--notion-border)' }}>
                   <input
                     type="checkbox"
                     checked={selectedIds.size === filteredWords.length && filteredWords.length > 0}
                     onChange={toggleSelectAll}
-                    className="w-5 h-5 rounded cursor-pointer"
-                    style={{
-                      accentColor: 'var(--forest-accent)'
-                    }}
+                    className="w-4 h-4 rounded cursor-pointer"
+                    style={{ accentColor: 'var(--notion-accent)' }}
                   />
-                  <span className="text-sm font-medium" style={{ color: 'var(--forest-medium)' }}>全选</span>
+                  <span className="text-xs" style={{ color: 'var(--notion-text-secondary)' }}>全选</span>
                 </div>
               )}
 
-              {/* 单词卡片（森林风格） */}
               {filteredWords.map((word) => (
                 <div
                   key={word.id}
-                  className={`forest-card p-5 rounded-2xl transition-all duration-200 ${
-                    selectedIds.has(word.id) ? 'ring-2' : ''
-                  }`}
+                  className={`notion-card p-4 transition-colors ${selectedIds.has(word.id) ? 'ring-1' : ''}`}
                   style={{
-                    borderColor: selectedIds.has(word.id) ? 'var(--forest-accent)' : 'rgba(107, 159, 120, 0.2)',
-                    background: selectedIds.has(word.id) 
-                      ? 'linear-gradient(135deg, rgba(52, 199, 89, 0.1) 0%, rgba(107, 159, 120, 0.05) 100%)'
-                      : 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(245, 250, 245, 0.95) 100%)'
+                    borderColor: selectedIds.has(word.id) ? 'var(--notion-accent)' : undefined
                   }}
                 >
-                  <div className="flex items-start gap-4">
-                    {/* 复选框（苹果风格） */}
+                  <div className="flex items-start gap-3">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(word.id)}
                       onChange={() => toggleSelect(word.id)}
-                      className="mt-1 w-5 h-5 rounded cursor-pointer"
-                      style={{
-                        accentColor: 'var(--forest-accent)'
-                      }}
+                      className="mt-0.5 w-4 h-4 rounded cursor-pointer"
+                      style={{ accentColor: 'var(--notion-accent)' }}
                     />
-
-                    {/* 内容 */}
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-xl font-semibold" style={{ color: 'var(--apple-text)' }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--notion-text)' }}>
                               {word.originalText}
                             </h3>
-                            {/* 发音按钮（苹果风格） */}
                             <button
                               onClick={() => handlePronounce(word)}
-                              className="w-8 h-8 flex items-center justify-center rounded-full transition-all duration-200 flex-shrink-0"
+                              className="w-7 h-7 flex items-center justify-center rounded transition-colors flex-shrink-0"
                               style={{
-                                color: playingWordId === word.id ? 'var(--forest-accent)' : 'var(--forest-medium)',
-                                background: playingWordId === word.id 
-                                  ? 'rgba(52, 199, 89, 0.15)' 
-                                  : 'rgba(107, 159, 120, 0.1)'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (playingWordId !== word.id) {
-                                  e.currentTarget.style.background = 'rgba(107, 159, 120, 0.2)'
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (playingWordId !== word.id) {
-                                  e.currentTarget.style.background = 'rgba(107, 159, 120, 0.1)'
-                                }
+                                color: playingWordId === word.id ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                                background: playingWordId === word.id ? 'rgba(35, 131, 226, 0.1)' : 'var(--notion-hover)'
                               }}
                               aria-label={playingWordId === word.id ? '停止播放' : '播放发音'}
                               title={playingWordId === word.id ? '停止播放' : '播放发音'}
                             >
                               {playingWordId === word.id ? (
-                                <VolumeX className="w-4 h-4" />
+                                <VolumeX className="w-3.5 h-3.5" strokeWidth={2} />
                               ) : (
-                                <Volume2 className="w-4 h-4" />
+                                <Volume2 className="w-3.5 h-3.5" strokeWidth={2} />
                               )}
                             </button>
                           </div>
                           {word.phonetic && (
-                            <p className="text-sm font-mono mt-1" style={{ color: 'var(--forest-medium)' }}>
+                            <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--notion-text-tertiary)' }}>
                               [{word.phonetic}]
                             </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {/* 删除按钮 */}
-                          <button
-                            onClick={() => handleDelete(word.id)}
-                            className="w-8 h-8 flex items-center justify-center rounded-full transition-all duration-200 flex-shrink-0"
-                            style={{
-                              color: '#ff6b6b',
-                              background: 'rgba(255, 107, 107, 0.1)'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 107, 107, 0.2)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 107, 107, 0.1)'
-                            }}
-                            aria-label="删除"
-                            title="删除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleDelete(word.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded transition-colors flex-shrink-0"
+                          style={{ color: 'var(--notion-error)', background: 'transparent' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--notion-hover)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                          aria-label="删除"
+                          title="删除"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={2} />
+                        </button>
                       </div>
-
-                      <p className="text-base mb-3 leading-relaxed" style={{ color: 'var(--apple-text)' }}>
+                      <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--notion-text)' }}>
                         {word.translation}
                       </p>
-
                       {word.grammar && (
-                        <div className="forest-card mt-3 p-3 rounded-xl text-sm" style={{ background: 'rgba(52, 199, 89, 0.08)' }}>
-                          <span className="font-medium" style={{ color: 'var(--forest-medium)' }}>💡 语法：</span>
-                          <span className="ml-2" style={{ color: 'var(--apple-text)' }}>{word.grammar}</span>
+                        <div className="notion-card mt-2 p-2 text-xs">
+                          <span style={{ color: 'var(--notion-text-secondary)' }}>语法：</span>
+                          <span className="ml-1" style={{ color: 'var(--notion-text)' }}>{word.grammar}</span>
                         </div>
                       )}
-
                       {word.context && (
-                        <div className="forest-card mt-3 p-3 rounded-xl text-sm" style={{ background: 'rgba(74, 124, 89, 0.08)' }}>
-                          <span className="font-medium" style={{ color: 'var(--forest-medium)' }}>🌿 语境：</span>
-                          <span className="ml-2" style={{ color: 'var(--apple-text)' }}>{word.context}</span>
+                        <div className="notion-card mt-2 p-2 text-xs">
+                          <span style={{ color: 'var(--notion-text-secondary)' }}>语境：</span>
+                          <span className="ml-1" style={{ color: 'var(--notion-text)' }}>{word.context}</span>
                         </div>
                       )}
-
-                      <div className="mt-3 text-xs" style={{ color: 'var(--apple-text-secondary)' }}>
-                        添加于 {new Date(word.createdAt).toLocaleString('zh-CN')} · 
-                        查看 {word.viewCount} 次
+                      <div className="mt-2 text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
+                        {new Date(word.createdAt).toLocaleString('zh-CN')} · 查看 {word.viewCount} 次
                       </div>
                     </div>
                   </div>

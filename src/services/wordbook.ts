@@ -93,15 +93,32 @@ class WordbookService {
   async getWordbook(): Promise<WordbookStorage> {
     return new Promise((resolve, reject) => {
       // chrome.storage.local.get：异步获取存储的数据
+      // 💡 导师小课堂：chrome.storage.local 是持久化存储，数据会一直保存直到：
+      // 1. 用户手动删除插件数据
+      // 2. 用户卸载插件
+      // 3. 浏览器清除扩展数据
+      // 即使关闭浏览器、重启电脑，数据也不会丢失
       chrome.storage.local.get([STORAGE_KEY], (result) => {
         // 检查是否有错误
         if (chrome.runtime.lastError) {
+          console.error('[Wordbook] 读取存储失败：', chrome.runtime.lastError.message)
           reject(new Error(chrome.runtime.lastError.message))
           return
         }
         
         // 如果没有数据，返回默认结构
         const data = result[STORAGE_KEY] as WordbookStorage | undefined
+        if (data) {
+          // 验证数据完整性：确保 words 是数组
+          if (!Array.isArray(data.words)) {
+            console.warn('[Wordbook] 数据格式错误，重置为默认结构')
+            resolve(DEFAULT_STORAGE)
+            return
+          }
+          console.log(`[Wordbook] 成功加载 ${data.words.length} 个单词`)
+        } else {
+          console.log('[Wordbook] 首次使用，创建默认存储结构')
+        }
         resolve(data || DEFAULT_STORAGE)
       })
     })
@@ -117,12 +134,23 @@ class WordbookService {
       // 更新更新时间
       storage.updatedAt = Date.now()
       
+      // 验证数据完整性：确保 words 是数组
+      if (!Array.isArray(storage.words)) {
+        console.error('[Wordbook] 保存失败：words 必须是数组')
+        reject(new Error('数据格式错误：words 必须是数组'))
+        return
+      }
+      
       // chrome.storage.local.set：异步保存数据
+      // 💡 导师小课堂：chrome.storage.local.set 会将数据写入磁盘，
+      // 即使浏览器关闭，数据也会永久保存（除非用户手动删除）
       chrome.storage.local.set({ [STORAGE_KEY]: storage }, () => {
         if (chrome.runtime.lastError) {
+          console.error('[Wordbook] 保存失败：', chrome.runtime.lastError.message)
           reject(new Error(chrome.runtime.lastError.message))
           return
         }
+        console.log(`[Wordbook] 成功保存 ${storage.words.length} 个单词`)
         resolve()
       })
     })

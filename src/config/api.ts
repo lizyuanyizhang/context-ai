@@ -33,8 +33,11 @@ export const API_CONFIG = {
   top_p: 0.9,
   
   // max_tokens：最大返回 token 数
-  // 翻译场景下，我们期望返回 JSON，所以设置一个合理的上限
-  max_tokens: 1000
+  max_tokens: 1000,
+  // 单词/短语场景下减少生成长度，加快响应
+  max_tokens_short: 400,
+  // 翻译请求超时（毫秒），避免长时间无响应
+  translationTimeoutMs: 14000
 }
 
 /**

@@ -18,6 +18,17 @@ import {
   getApiHeaders
 } from '../config/api'
 
+/** 带超时的 fetch：超时后 abort 并抛出 */
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = API_CONFIG.translationTimeoutMs ?? 14000
+): Promise<Response> {
+  const controller = new AbortController()
+  const to = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(to))
+}
+
 /**
  * 翻译结果数据结构
  * 对应通义千问返回的 JSON 格式
@@ -62,17 +73,64 @@ export class QwenApiError extends Error {
  * @param sourceLang - 源语言（'en', 'de', 'fr', 'ja', 'es'）
  * @returns 完整的提示词
  */
-function buildTranslationPrompt(text: string, sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es'): string {
-  const langMap: Record<'en' | 'de' | 'fr' | 'ja' | 'es', string> = {
+function buildTranslationPrompt(
+  text: string, 
+  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh' = 'en',
+  targetLang: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh' = 'zh'
+): string {
+  const langMap: Record<'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh', string> = {
     'en': '英语',
     'de': '德语',
     'fr': '法语',
     'ja': '日语',
-    'es': '西班牙语'
+    'es': '西班牙语',
+    'zh': '中文'
   }
-  const langName = langMap[sourceLang] || '英语'
+  const sourceLangName = langMap[sourceLang] || '英语'
+  const targetLangName = langMap[targetLang] || '中文'
   
-  return `你是一位资深的专业翻译家，精通"信、达、雅"的翻译标准，熟悉各类标准翻译和经典译本。请将以下${langName}文本翻译成中文，并提供详细的学习辅助信息。
+  // 如果是中文翻译为其他语言，使用专门的提示词
+  if (sourceLang === 'zh' && targetLang !== 'zh') {
+    return `你是一位资深的专业翻译家，精通"信、达、雅"的翻译标准。请将以下中文文本翻译成${targetLangName}，并提供详细的学习辅助信息。
+
+**翻译标准：信、达、雅**
+1. **信（准确）**：忠实于原文，准确传达原意，不增不减
+2. **达（流畅）**：译文通顺流畅，符合${targetLangName}表达习惯，读起来自然
+3. **雅（优美）**：译文优美典雅，有文采，适合原文的文体和风格
+
+**翻译要求（非常重要）**：
+1. **准确且地道**：翻译要准确、自然，使用地道的${targetLangName}表达
+2. **文体匹配**：诗歌要有诗意，散文要流畅，口语要自然
+3. **语境适配**：根据上下文选择最合适的翻译，避免生硬直译
+4. **文化适应**：考虑文化差异，使用符合${targetLangName}文化背景的表达
+
+学习辅助要求：
+1. **语法点拨**：
+   - 直接说明关键语法点，不要解释为什么这样翻译
+   - 说明重要的语法结构、词序、时态、语态等
+   - 避免使用"准确传达"、"符合...语序"等论证性表述
+
+2. **上下文分析**：
+   - 分析这个词/句子在上下文中的含义
+   - 在不同场景下的用法
+   - 可以举例说明
+
+请严格按照以下 JSON 格式返回，不要添加任何其他内容：
+{
+  "translation": "翻译结果（必须遵循信、达、雅的标准，使用地道的${targetLangName}表达）",
+  "grammar": "语法点拨（直接说明关键语法点，不要解释为什么这样翻译）",
+  "context": "上下文语境分析（说明在不同场景下的用法，可以举例）",
+  "phonetic": "",
+  "pronunciation": ""
+}
+
+要翻译的中文文本：
+${text}`
+  }
+  
+  // 如果是其他语言翻译为中文，使用原有的详细提示词
+  if (targetLang === 'zh') {
+    return `你是一位资深的专业翻译家，精通"信、达、雅"的翻译标准，熟悉各类标准翻译和经典译本。请将以下${sourceLangName}文本翻译成中文，并提供详细的学习辅助信息。
 
 **核心原则：优先使用标准翻译**
 在翻译之前，必须按以下优先级检索并使用已有的标准翻译：
@@ -149,26 +207,23 @@ function buildTranslationPrompt(text: string, sourceLang: 'en' | 'de' | 'fr' | '
        - 海涅：讽刺性、政治性、抒情性
        - 如果不确定，可以说明"疑似[作者名]的作品"
      * 使用的是哪位翻译家的经典译本（如果是经典译本）
-     * 为什么这个译本被认为是标准/经典翻译
-     * 这个翻译如何体现"信、达、雅"的标准
+     * 说明这是标准/经典翻译
    - 如果是标准习语/术语，说明这是标准的中文对应表达
-   - 如果是普通文本，解释关键语法点，说明为什么这样翻译，如何体现"信、达、雅"
+   - 如果是普通文本，直接说明关键语法点、词序、时态、语态等，不要解释为什么这样翻译，避免使用"准确传达"、"符合...语序"等论证性表述
 
 2. **上下文分析**：
-   - 如果是经典作品，深入分析：
+   - 如果是经典作品，分析：
      * 创作背景、时代背景
      * 主题思想、深层含义
      * 文学价值、艺术特色
      * 在不同文化背景下的影响和意义
-     * 为什么这个翻译能够准确传达原文的意境和美感
    - 如果是标准习语/术语，说明：
      * 这个表达的标准用法
      * 在不同场景下的应用
-     * 为什么这个翻译是标准翻译
    - 如果是普通文本，分析：
      * 这个词/句子在上下文中的含义
      * 在不同场景下的用法
-     * 翻译时如何考虑语境
+     * 可以举例说明
 3. **音标**（重要）：
    - 如果是单词，必须提供准确的 IPA 国际音标
    - 英语：使用标准 IPA，如 "happy" → /ˈhæpi/
@@ -195,16 +250,113 @@ function buildTranslationPrompt(text: string, sourceLang: 'en' | 'de' | 'fr' | '
 请严格按照以下 JSON 格式返回，不要添加任何其他内容：
 {
   "translation": "翻译结果（必须优先使用标准翻译：经典作品用经典译本，习语用标准表达，术语用标准译名。只有在没有标准翻译时才自行翻译，且必须遵循信、达、雅的标准）",
-  "grammar": "语法点拨（必须说明：1）如果是标准翻译，注明来源和为什么是标准翻译；2）如果是经典译本，注明作者和翻译家；3）如何体现信、达、雅的标准；4）如果是普通文本，解释关键语法点和翻译理由）",
-  "context": "上下文语境分析（如果是经典作品，深入分析创作背景、主题思想、文学价值和跨文化影响；如果是标准表达，说明标准用法和应用场景；如果是普通文本，说明在不同场景下的用法，可以举例）",
+  "grammar": "语法点拨（如果是标准翻译，注明来源；如果是经典译本，注明作者和翻译家；如果是普通文本，直接说明关键语法点，不要解释为什么这样翻译）",
+  "context": "上下文语境分析（如果是经典作品，分析创作背景、主题思想、文学价值；如果是标准表达，说明标准用法和应用场景；如果是普通文本，说明在不同场景下的用法，可以举例）",
   "phonetic": "音标，仅当是单词时提供（IPA 国际音标，必须准确）",
   "pronunciation": "读音助记，仅当是单词或短语时提供（英文发音提示，包括音节划分和重音位置，如 hel-LO 或 huh-LOH）"
 }
 
-要翻译的${langName}文本：
+要翻译的${sourceLangName}文本：
 ${text}
 
 请直接返回 JSON，不要添加任何解释或说明文字。`
+  }
+  
+  // 如果是其他语言之间的翻译（非中文），使用通用提示词
+  return `你是一位资深的专业翻译家，精通"信、达、雅"的翻译标准。请将以下${sourceLangName}文本翻译成${targetLangName}，并提供详细的学习辅助信息。
+
+**翻译标准：信、达、雅**
+1. **信（准确）**：忠实于原文，准确传达原意，不增不减
+2. **达（流畅）**：译文通顺流畅，符合${targetLangName}表达习惯，读起来自然
+3. **雅（优美）**：译文优美典雅，有文采，适合原文的文体和风格
+
+**翻译要求（非常重要）**：
+1. **准确且地道**：翻译要准确、自然，使用地道的${targetLangName}表达
+2. **文体匹配**：诗歌要有诗意，散文要流畅，口语要自然
+3. **语境适配**：根据上下文选择最合适的翻译，避免生硬直译
+4. **文化适应**：考虑文化差异，使用符合${targetLangName}文化背景的表达
+
+学习辅助要求：
+1. **语法点拨**：
+   - 直接说明关键语法点，不要解释为什么这样翻译
+   - 说明重要的语法结构、词序、时态、语态等
+   - 避免使用"准确传达"、"符合...语序"等论证性表述
+
+2. **上下文分析**：
+   - 分析这个词/句子在上下文中的含义
+   - 在不同场景下的用法
+   - 可以举例说明
+
+请严格按照以下 JSON 格式返回，不要添加任何其他内容：
+{
+  "translation": "翻译结果（必须遵循信、达、雅的标准，使用地道的${targetLangName}表达）",
+  "grammar": "语法点拨（直接说明关键语法点，不要解释为什么这样翻译）",
+  "context": "上下文语境分析（说明在不同场景下的用法，可以举例）",
+  "phonetic": "",
+  "pronunciation": ""
+}
+
+要翻译的${sourceLangName}文本：
+${text}`
+}
+
+/**
+ * 构建「增强预翻译」提示词：已有机器翻译初稿，只让模型补充语法/语境/音标/读音，并可选润色译文
+ * 类比：像先查字典得到释义，再请老师补充用法和例句——减少模型生成量，加快响应
+ */
+function buildEnhancementPrompt(
+  text: string,
+  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es',
+  draftTranslation: string
+): string {
+  const langMap: Record<'en' | 'de' | 'fr' | 'ja' | 'es', string> = {
+    'en': '英语',
+    'de': '德语',
+    'fr': '法语',
+    'ja': '日语',
+    'es': '西班牙语'
+  }
+  const langName = langMap[sourceLang] || '英语'
+  return `你是一位资深翻译与语言教师。下面是一段${langName}原文及其机器翻译初稿，请仅做「补充与润色」，不要重写整段。
+
+**原文：**
+${text}
+
+**机器翻译初稿：**
+${draftTranslation}
+
+请完成以下任务（尽量简洁，以缩短回复）：
+1. **translation**：若初稿已足够好则照抄；若有明显错误或更地道的译法，给出润色后的译文。
+2. **grammar**：简要语法点拨（直接说明关键语法点，不要解释为什么这样翻译）。
+3. **context**：简要上下文/用法说明；若该表达在互联网或现代用法中有常见说法，可一并提及。
+4. **phonetic**：仅当原文为单词或短语时，给出 IPA 音标。
+5. **pronunciation**：仅当原文为单词或短语时，给出读音助记（音节与重音）。
+
+请严格按以下 JSON 返回，不要其他内容：
+{
+  "translation": "最终译文（可沿用初稿或润色）",
+  "grammar": "语法点拨（简明）",
+  "context": "上下文与用法（可含网络/现代用法）",
+  "phonetic": "音标或留空",
+  "pronunciation": "读音助记或留空"
+}`
+}
+
+/** 判断是否为单词/短语（无空格或仅一段），用于走短 prompt 加快响应 */
+function isSingleWordOrPhrase(text: string): boolean {
+  const t = text.trim()
+  return t.length > 0 && t.length <= 30 && !/\s{2,}/.test(t)
+}
+
+/** 单词/短语专用极简增强 prompt，减少 token 与生成时间 */
+function buildWordEnhancementPrompt(
+  text: string,
+  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es',
+  draftTranslation: string
+): string {
+  const langMap: Record<string, string> = { en: '英语', de: '德语', fr: '法语', ja: '日语', es: '西班牙语' }
+  const langName = langMap[sourceLang] || '英语'
+  return `原文（${langName}）：${text}\n初稿：${draftTranslation}\n请只返回一行 JSON（不要换行、不要解释）：{"translation":"最终译文","grammar":"一两句语法","context":"一两句用法","phonetic":"IPA音标或留空","pronunciation":"读音助记或留空"}`
 }
 
 /**
@@ -282,128 +434,199 @@ function extractField(text: string, fieldName: string): string | undefined {
 }
 
 /**
- * 调用通义千问 API 进行翻译
- * 
- * @param text - 要翻译的文本
- * @param sourceLang - 源语言（'en', 'de', 'fr', 'ja', 'es'）
- * @param retries - 重试次数（默认 2 次）
- * @returns 翻译结果
- * @throws QwenApiError 如果 API 调用失败
+ * 按「服务商配置」调用 OpenAI 兼容接口进行翻译（多服务商统一入口）
+ */
+export interface ProviderConfig {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+export async function translateTextWithConfig(
+  providerConfig: ProviderConfig,
+  text: string,
+  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh' = 'en',
+  targetLang: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh' = 'zh',
+  retries: number = 2
+): Promise<TranslationResponse> {
+  // 如果源语言和目标语言相同，抛出错误
+  if (sourceLang === targetLang) {
+    throw new QwenApiError('源语言和目标语言不能相同', 'INVALID_LANG_PAIR')
+  }
+  if (!providerConfig.apiKey?.trim()) {
+    throw new QwenApiError(
+      '未配置 API Key。请点击扩展图标，在设置中填写当前服务商的 API Key。',
+      'MISSING_API_KEY'
+    )
+  }
+  if (!text || text.trim().length === 0) {
+    throw new QwenApiError('翻译文本不能为空', 'EMPTY_TEXT')
+  }
+
+  const prompt = buildTranslationPrompt(text.trim(), sourceLang, targetLang)
+  const baseUrl = providerConfig.baseUrl.replace(/\/$/, '')
+  const url = `${baseUrl}/chat/completions`
+  const requestBody = {
+    model: providerConfig.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: API_CONFIG.temperature,
+    top_p: API_CONFIG.top_p,
+    max_tokens: API_CONFIG.max_tokens,
+    response_format: { type: 'json_object' } as any
+  }
+
+  const timeoutMs = API_CONFIG.translationTimeoutMs ?? 14000
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${providerConfig.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      }, timeoutMs)
+
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error?.message || errorMessage
+        } catch { /* ignore */ }
+        throw new QwenApiError(`API 请求失败：${errorMessage}`, 'API_ERROR', response.status)
+      }
+
+      const data = await response.json()
+      if (!data.choices?.[0]?.message) {
+        throw new QwenApiError('API 响应格式错误', 'INVALID_RESPONSE')
+      }
+      const content = data.choices[0].message.content
+      if (!content) {
+        throw new QwenApiError('API 响应中缺少内容', 'EMPTY_RESPONSE')
+      }
+      return parseTranslationResponse(content)
+    } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError'
+      lastError = error instanceof QwenApiError ? error : new QwenApiError(
+        isAbort ? '翻译请求超时，请稍后重试' : (error instanceof Error ? error.message : '未知错误'),
+        isAbort ? 'TIMEOUT' : 'UNKNOWN_ERROR'
+      )
+      if (attempt < retries && !isAbort) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000))
+        continue
+      }
+    }
+  }
+  throw lastError || new QwenApiError('翻译失败：未知错误', 'UNKNOWN_ERROR')
+}
+
+/**
+ * 基于预翻译初稿调用大模型「只增强不重译」：补充语法、语境、音标与读音，可选润色译文
+ * 相比完整翻译 prompt 更短、生成更少，通常响应更快
+ */
+export async function enhanceTranslationWithConfig(
+  providerConfig: ProviderConfig,
+  text: string,
+  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es',
+  draftTranslation: string,
+  retries: number = 2
+): Promise<TranslationResponse> {
+  if (!providerConfig.apiKey?.trim()) {
+    throw new QwenApiError(
+      '未配置 API Key。请点击扩展图标，在设置中填写当前服务商的 API Key。',
+      'MISSING_API_KEY'
+    )
+  }
+  if (!text?.trim() || !draftTranslation?.trim()) {
+    throw new QwenApiError('原文或初稿为空', 'EMPTY_TEXT')
+  }
+
+  const isShort = isSingleWordOrPhrase(text)
+  const prompt = isShort
+    ? buildWordEnhancementPrompt(text.trim(), sourceLang, draftTranslation.trim())
+    : buildEnhancementPrompt(text.trim(), sourceLang, draftTranslation.trim())
+  const maxTokens = isShort ? (API_CONFIG.max_tokens_short ?? 400) : API_CONFIG.max_tokens
+  const baseUrl = providerConfig.baseUrl.replace(/\/$/, '')
+  const url = `${baseUrl}/chat/completions`
+  const requestBody = {
+    model: providerConfig.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: API_CONFIG.temperature,
+    top_p: API_CONFIG.top_p,
+    max_tokens: maxTokens,
+    response_format: { type: 'json_object' } as any
+  }
+
+  const timeoutMs = API_CONFIG.translationTimeoutMs ?? 14000
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${providerConfig.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      }, timeoutMs)
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error?.message || errorMessage
+        } catch { /* ignore */ }
+        throw new QwenApiError(`API 请求失败：${errorMessage}`, 'API_ERROR', response.status)
+      }
+      const data = await response.json()
+      if (!data.choices?.[0]?.message) {
+        throw new QwenApiError('API 响应格式错误', 'INVALID_RESPONSE')
+      }
+      const content = data.choices[0].message.content
+      if (!content) {
+        throw new QwenApiError('API 响应中缺少内容', 'EMPTY_RESPONSE')
+      }
+      return parseTranslationResponse(content)
+    } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError'
+      lastError = error instanceof QwenApiError ? error : new QwenApiError(
+        isAbort ? '请求超时' : (error instanceof Error ? error.message : '未知错误'),
+        isAbort ? 'TIMEOUT' : 'UNKNOWN_ERROR'
+      )
+      if (attempt < retries && !isAbort) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000))
+        continue
+      }
+    }
+  }
+  throw lastError || new QwenApiError('增强翻译失败：未知错误', 'UNKNOWN_ERROR')
+}
+
+/**
+ * 调用通义千问 API 进行翻译（保留：兼容 .env 或未配置多服务商时的默认行为）
  */
 export async function translateText(
   text: string,
   sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es' = 'en',
   retries: number = 2
 ): Promise<TranslationResponse> {
-  // 检查 API Key
   if (!QWEN_API_KEY) {
     throw new QwenApiError(
-      '未配置通义千问 API Key。请在 .env 文件中设置 VITE_QWEN_API_KEY',
+      '未配置 API Key。请点击扩展图标，在设置中选择服务商并填写 API Key。',
       'MISSING_API_KEY'
     )
   }
-  
-  // 验证输入
-  if (!text || text.trim().length === 0) {
-    throw new QwenApiError('翻译文本不能为空', 'EMPTY_TEXT')
-  }
-  
-  // 构建提示词
-  const prompt = buildTranslationPrompt(text.trim(), sourceLang)
-  
-  // 构建请求体
-  // 通义千问使用 OpenAI 兼容格式，所以请求体格式与 OpenAI 相同
-  const requestBody = {
-    model: QWEN_MODEL, // 使用的模型
-    messages: [
-      {
-        role: 'user', // 用户消息
-        content: prompt // 提示词内容
-      }
-    ],
-    temperature: API_CONFIG.temperature, // 温度参数：控制随机性
-    top_p: API_CONFIG.top_p, // 核采样参数：控制多样性
-    max_tokens: API_CONFIG.max_tokens, // 最大 token 数
-    // 要求返回 JSON 格式（如果模型支持）
-    response_format: { type: 'json_object' } as any
-  }
-  
-  // 发送请求（带重试机制）
-  let lastError: Error | null = null
-  
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      // 构建请求 URL
-      const url = getApiUrl('chat/completions')
-      
-      // 发送 fetch 请求
-      // fetch 是浏览器原生 API，用于发送 HTTP 请求
-      const response = await fetch(url, {
-        method: 'POST', // POST 方法
-        headers: getApiHeaders(), // 请求头（包含认证信息）
-        body: JSON.stringify(requestBody) // 请求体（JSON 字符串）
-      })
-      
-      // 检查 HTTP 状态码
-      if (!response.ok) {
-        // 尝试解析错误响应
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error?.message || errorMessage
-        } catch {
-          // 如果无法解析错误响应，使用默认错误信息
-        }
-        
-        throw new QwenApiError(
-          `API 请求失败：${errorMessage}`,
-          'API_ERROR',
-          response.status
-        )
-      }
-      
-      // 解析响应
-      const data = await response.json()
-      
-      // 检查响应格式
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new QwenApiError('API 响应格式错误', 'INVALID_RESPONSE')
-      }
-      
-      // 获取模型返回的内容
-      const content = data.choices[0].message.content
-      
-      if (!content) {
-        throw new QwenApiError('API 响应中缺少内容', 'EMPTY_RESPONSE')
-      }
-      
-      // 解析翻译结果
-      const translationResult = parseTranslationResponse(content)
-      
-      // 添加原始文本
-      return {
-        ...translationResult,
-        // 注意：这里不添加 originalText，因为调用方会处理
-      }
-      
-    } catch (error) {
-      lastError = error instanceof QwenApiError ? error : new QwenApiError(
-        error instanceof Error ? error.message : '未知错误',
-        'UNKNOWN_ERROR'
-      )
-      
-      // 如果不是最后一次尝试，等待后重试
-      if (attempt < retries) {
-        // 指数退避：每次重试等待时间翻倍
-        const delay = Math.pow(2, attempt) * 1000 // 1s, 2s, 4s...
-        await new Promise(resolve => setTimeout(resolve, delay))
-        continue
-      }
-    }
-  }
-  
-  // 所有重试都失败了，抛出最后一个错误
-  throw lastError || new QwenApiError('翻译失败：未知错误', 'UNKNOWN_ERROR')
+  return translateTextWithConfig(
+    {
+      baseUrl: QWEN_API_BASE_URL,
+      apiKey: QWEN_API_KEY,
+      model: QWEN_MODEL
+    },
+    text,
+    sourceLang,
+    'zh', // 默认目标语言为中文
+    retries
+  )
 }
 
 /**

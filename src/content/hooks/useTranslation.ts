@@ -8,7 +8,7 @@
  * 4. 缓存翻译结果（可选）
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { TranslationResult } from '../components/TranslationPanel'
 
 /**
@@ -21,8 +21,8 @@ export interface UseTranslationReturn {
   isLoading: boolean
   // 错误信息
   error: string | null
-  // 执行翻译
-  translate: (text: string, sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es') => Promise<void>
+  // 执行翻译（支持指定目标语言，如果不指定则默认翻译为中文）
+  translate: (text: string, sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh', targetLang?: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh') => Promise<void>
   // 清除结果和错误
   clear: () => void
 }
@@ -51,18 +51,29 @@ export function useTranslation(): UseTranslationReturn {
    * 
    * @param text - 要翻译的文本
    * @param sourceLang - 源语言（可选）
+   * @param targetLang - 目标语言（可选，默认为中文 'zh'）
    */
-  const translate = useCallback(async (text: string, sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es') => {
+  const translate = useCallback(async (text: string, sourceLang?: 'en' | 'de' | 'fr' | 'ja' | 'es' | 'zh', targetLang: 'en' | 'de' | 'fr' | 'es' | 'ja' | 'zh' = 'zh') => {
     // 如果文本为空，直接返回
     if (!text || text.trim().length === 0) {
       setError('翻译文本不能为空')
       return
     }
     
+    const trimmedText = text.trim()
+    
+    // 调试日志：检查翻译的文本
+    console.log('[Context AI] useTranslation.translate 被调用:', {
+      originalText: text.substring(0, 100),
+      trimmedText: trimmedText.substring(0, 100),
+      textLength: trimmedText.length,
+      sourceLang
+    })
+    
     // 保存当前请求（用于检查是否被取消）
     // 使用时间戳确保每次请求都是唯一的
-    const requestId = `${text.trim()}-${Date.now()}`
-    currentRequestRef.current = { text, requestId }
+    const requestId = `${trimmedText}-${Date.now()}`
+    currentRequestRef.current = { text: trimmedText, requestId }
     
     // 立即清除之前的结果和错误（确保显示新的加载状态）
     setResult(null)
@@ -82,8 +93,9 @@ export function useTranslation(): UseTranslationReturn {
       // chrome.runtime.sendMessage：Chrome Extension API，用于发送消息
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
-        text: text.trim(),
-        sourceLang: sourceLang
+        text: trimmedText,
+        sourceLang: sourceLang,
+        targetLang: targetLang // 传递目标语言
       }).catch((error) => {
         // 处理 chrome.runtime.sendMessage 的错误
         // Extension context invalidated 是常见错误
@@ -176,6 +188,26 @@ export function useTranslation(): UseTranslationReturn {
         setIsLoading(false)
       }
     }
+  }, [])
+
+  // 监听「预翻译」结果：先展示即时译文，再等大模型补充语法/语境
+  useEffect(() => {
+    const listener = (msg: { type?: string; data?: Partial<TranslationResult> }) => {
+      if (msg.type !== 'TRANSLATE_PARTIAL' || !msg.data?.translation) return
+      const data = msg.data
+      if (currentRequestRef.current?.text !== data.originalText?.trim()) return
+      setResult({
+        translation: data.translation!,
+        originalText: data.originalText ?? currentRequestRef.current?.text ?? '',
+        grammar: data.grammar,
+        context: data.context,
+        phonetic: data.phonetic,
+        pronunciation: data.pronunciation,
+        isPartial: true
+      })
+    }
+    chrome.runtime?.onMessage?.addListener(listener)
+    return () => { chrome.runtime?.onMessage?.removeListener(listener) }
   }, [])
 
   /**

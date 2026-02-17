@@ -1,238 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Context AI - 截图演示页面</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>外语插件 · 演示页</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-      line-height: 1.6;
-      color: #333;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 40px 20px;
-      min-height: 100vh;
-    }
-
-    .container {
-      max-width: 1200px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.7;
+      max-width: 720px;
       margin: 0 auto;
-      background: white;
-      padding: 60px;
-      border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 2rem 1.5rem;
+      color: #333;
+      background: #fafafa;
     }
-
     h1 {
-      font-size: 2.5em;
-      margin-bottom: 30px;
-      color: #2d3748;
-      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #111;
     }
-
-    .section {
-      margin-bottom: 50px;
-      padding: 30px;
-      background: #f7fafc;
-      border-radius: 12px;
-      border-left: 4px solid #667eea;
-    }
-
-    .section h2 {
-      font-size: 1.8em;
-      margin-bottom: 20px;
-      color: #2d3748;
-    }
-
-    .section p {
-      font-size: 1.1em;
-      margin-bottom: 15px;
-      color: #4a5568;
-    }
-
-    .text-sample {
-      font-size: 1.2em;
-      padding: 20px;
-      background: white;
+    .hint {
+      font-size: 0.875rem;
+      color: #666;
+      margin-bottom: 2rem;
+      padding: 0.75rem 1rem;
+      background: #f0f4f8;
       border-radius: 8px;
-      margin: 15px 0;
-      border: 2px dashed #cbd5e0;
-      cursor: pointer;
-      transition: all 0.3s;
+      border-left: 4px solid #2383e2;
     }
-
-    .text-sample:hover {
-      border-color: #667eea;
-      background: #edf2f7;
+    section {
+      margin-bottom: 2rem;
     }
-
-    .language-label {
-      display: inline-block;
-      padding: 4px 12px;
-      background: #667eea;
-      color: white;
-      border-radius: 4px;
-      font-size: 0.85em;
-      margin-bottom: 10px;
+    section h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 0.75rem;
     }
-
-    .instructions {
-      background: #fff3cd;
-      border: 1px solid #ffc107;
+    .paragraph {
+      padding: 1rem;
+      background: #fff;
       border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 30px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      margin-bottom: 1rem;
+      user-select: text;
     }
-
-    .instructions h3 {
-      color: #856404;
-      margin-bottom: 10px;
-    }
-
-    .instructions ol {
-      margin-left: 20px;
-      color: #856404;
-    }
-
-    .instructions li {
-      margin-bottom: 8px;
-    }
-
-    .highlight {
-      background: #fff3cd;
-      padding: 2px 4px;
-      border-radius: 3px;
-    }
+    .paragraph:last-child { margin-bottom: 0; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🌍 Context AI - 截图演示页面</h1>
+  <h1>外语插件 · 演示页</h1>
+  <p class="hint">
+    <strong>说明：</strong>本页用于测试与截图。选中下方任意英文或中文段落，即可唤出翻译/发音/复制/加入生词本等浮动工具栏。
+  </p>
 
-    <div class="instructions">
-      <h3>📸 截图说明</h3>
-      <ol>
-        <li>选中下面的任意文本，插件会自动弹出浮动按钮</li>
-        <li>点击"翻译"按钮查看翻译结果</li>
-        <li>调整浏览器窗口到 <strong>1280 x 800</strong> 像素</li>
-        <li>使用截图工具截图（推荐使用Chrome开发者工具的"Capture full size screenshot"）</li>
-      </ol>
+  <section>
+    <h2>英文示例</h2>
+    <div class="paragraph">
+      The quick brown fox jumps over the lazy dog. Learning a new language opens doors to different cultures and ways of thinking.
     </div>
-
-    <!-- 英语示例 -->
-    <div class="section">
-      <h2>📖 英语示例（English）</h2>
-      <span class="language-label">EN</span>
-      <p>选中下面的文本，查看翻译效果：</p>
-      <div class="text-sample">
-        The quick brown fox jumps over the lazy dog. This is a classic English sentence used for typing practice.
-      </div>
-      <div class="text-sample">
-        In the realm of artificial intelligence, machine learning algorithms have revolutionized how we process and understand vast amounts of data.
-      </div>
+    <div class="paragraph">
+      Technology has transformed how we communicate across borders. A single sentence can now be translated in milliseconds, bringing the world closer together.
     </div>
+  </section>
 
-    <!-- 德语示例 -->
-    <div class="section">
-      <h2>🇩🇪 德语示例（Deutsch）</h2>
-      <span class="language-label">DE</span>
-      <p>选中下面的文本，查看德语翻译：</p>
-      <div class="text-sample">
-        Der schnelle braune Fuchs springt über den faulen Hund. Dies ist ein klassischer deutscher Satz.
-      </div>
-      <div class="text-sample">
-        Die Schönheit der Natur liegt in ihrer Vielfalt und ihrem ständigen Wandel. Jede Jahreszeit bringt ihre eigenen Farben und Gerüche mit sich.
-      </div>
+  <section>
+    <h2>中文示例</h2>
+    <div class="paragraph">
+      学外语不仅是为了考试，更是为了理解另一种思维方式和生活方式。每天进步一点点，坚持就会看到变化。
     </div>
-
-    <!-- 法语示例 -->
-    <div class="section">
-      <h2>🇫🇷 法语示例（Français）</h2>
-      <span class="language-label">FR</span>
-      <p>选中下面的文本，查看法语翻译：</p>
-      <div class="text-sample">
-        Le renard brun rapide saute par-dessus le chien paresseux. C'est une phrase classique en français.
-      </div>
-      <div class="text-sample">
-        La vie est belle quand on sait apprécier les petits moments de bonheur qui se présentent à nous chaque jour.
-      </div>
+    <div class="paragraph">
+      阅读原版书籍、看无字幕影视，都是很好的沉浸式学习方式。遇到生词可以先猜再查，印象会更深刻。
     </div>
-
-    <!-- 日语示例 -->
-    <div class="section">
-      <h2>🇯🇵 日语示例（日本語）</h2>
-      <span class="language-label">JA</span>
-      <p>选中下面的文本，查看日语翻译：</p>
-      <div class="text-sample">
-        こんにちは、世界。これは日本語のサンプルテキストです。
-      </div>
-      <div class="text-sample">
-        桜の季節がやってきました。美しい花が咲き誇り、人々の心を和ませてくれます。
-      </div>
-    </div>
-
-    <!-- 西班牙语示例 -->
-    <div class="section">
-      <h2>🇪🇸 西班牙语示例（Español）</h2>
-      <span class="language-label">ES</span>
-      <p>选中下面的文本，查看西班牙语翻译：</p>
-      <div class="text-sample">
-        El zorro marrón rápido salta sobre el perro perezoso. Esta es una frase clásica en español.
-      </div>
-      <div class="text-sample">
-        La música es el lenguaje universal que conecta a las personas de diferentes culturas y países.
-      </div>
-    </div>
-
-    <!-- 长文本示例（用于展示完整翻译面板） -->
-    <div class="section">
-      <h2>📝 长文本示例（用于完整截图）</h2>
-      <p>选中下面的长文本，可以展示完整的翻译面板（翻译、语法、语境）：</p>
-      <div class="text-sample">
-        Artificial intelligence has become one of the most transformative technologies of our time. It enables machines to learn from experience, adjust to new inputs, and perform human-like tasks. From self-driving cars to virtual assistants, AI is reshaping industries and creating new possibilities for innovation.
-      </div>
-    </div>
-
-    <!-- 使用说明 -->
-    <div class="section">
-      <h2>💡 使用提示</h2>
-      <p><strong>截图1（主要功能）</strong>：选中英语示例文本，点击翻译，截图完整翻译面板</p>
-      <p><strong>截图2（生词本）</strong>：先保存几个单词到生词本，然后打开生词本截图</p>
-      <p><strong>截图3（闪卡学习）</strong>：打开生词本，点击"闪卡学习"按钮，截图闪卡界面</p>
-      <p><strong>截图4（多语言）</strong>：分别选中不同语言的文本，选择最清晰的一张截图</p>
-    </div>
-  </div>
-
-  <script>
-    // 添加一些交互效果
-    document.querySelectorAll('.text-sample').forEach(sample => {
-      sample.addEventListener('mouseenter', function() {
-        this.style.transform = 'translateY(-2px)';
-        this.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.2)';
-      });
-      
-      sample.addEventListener('mouseleave', function() {
-        this.style.transform = 'translateY(0)';
-        this.style.boxShadow = 'none';
-      });
-    });
-
-    // 提示用户调整窗口大小
-    window.addEventListener('load', function() {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      
-      if (width < 1280 || height < 800) {
-        console.log('💡 提示：建议将浏览器窗口调整到 1280 x 800 像素以获得最佳截图效果');
-        console.log('   当前窗口大小：' + width + ' x ' + height);
-      }
-    });
-  </script>
+  </section>
 </body>
 </html>
