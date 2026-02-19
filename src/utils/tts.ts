@@ -54,13 +54,61 @@ interface LanguageConfig {
  * - 这些参数组合能让声音听起来更年轻、更自然
  */
 // 语速 0.95 更清晰、不易吞字；pitch 1.0 避免尖细/机械感（参考：过高易像“鸭子声”）
-const LANGUAGE_CONFIGS: Record<SupportedLanguage, LanguageConfig> = {
+export const LANGUAGE_CONFIGS: Record<SupportedLanguage, LanguageConfig> = {
   en: { lang: 'en-US', rate: 0.95, pitch: 1.0, volume: 1.0 },
   de: { lang: 'de-DE', rate: 0.95, pitch: 1.0, volume: 1.0 },
   zh: { lang: 'zh-CN', rate: 0.95, pitch: 1.0, volume: 1.0 },
   fr: { lang: 'fr-FR', rate: 0.95, pitch: 1.0, volume: 1.0 },
   ja: { lang: 'ja-JP', rate: 0.95, pitch: 1.0, volume: 1.0 },
   es: { lang: 'es-ES', rate: 0.95, pitch: 1.0, volume: 1.0 }
+}
+
+/**
+ * 文本规范化：移除不应朗读的符号，替换易误读符号为可读词。
+ * 移除：引号（""、''、「」）、省略号（...、…）、括号等标点符号
+ * 替换：@ → "at"、# → "number" 等（避免中文读成「小老鼠」）
+ */
+function normalizeTextForTTS(text: string, lang: SupportedLanguage): string {
+  if (!text) return text
+  let out = text
+  
+  // 移除不应朗读的符号（直接删除，不替换）
+  // 引号：中文引号「」、英文引号 "" ''、全角引号 "" ''、单引号 '' ''
+  out = out.replace(/[""''「」『』《》]/g, '')
+  // 省略号：... 和 …（中文省略号）
+  out = out.replace(/\.{2,}/g, '') // 两个或更多点
+  out = out.replace(/…/g, '') // 中文省略号
+  // 括号：() [] {} （）【】等（保留内容，移除括号）
+  out = out.replace(/[()[\]{}（）【】]/g, '')
+  // 其他标点：破折号、连接号等（可选，根据需求）
+  // out = out.replace(/[—–-]/g, ' ') // 破折号替换为空格
+  
+  // 替换易误读符号为可读词
+  const atReadings: Record<SupportedLanguage, string> = {
+    en: ' at ',
+    de: ' at ',
+    fr: ' at ',
+    es: ' at ',
+    ja: ' アット ',
+    zh: ' 艾特 '
+  }
+  const hashReadings: Record<SupportedLanguage, string> = {
+    en: ' number ',
+    de: ' Nummer ',
+    fr: ' numéro ',
+    es: ' número ',
+    ja: ' ナンバー ',
+    zh: ' 井号 '
+  }
+  const readingAt = atReadings[lang] ?? ' at '
+  const readingHash = hashReadings[lang] ?? ' number '
+  out = out.replace(/@/g, readingAt)
+  out = out.replace(/#/g, readingHash)
+  
+  // 清理多余空格（移除符号后可能留下多个空格）
+  out = out.replace(/\s+/g, ' ').trim()
+  
+  return out
 }
 
 /**
@@ -264,6 +312,97 @@ export function detectLanguage(text: string): SupportedLanguage {
   return 'en'
 }
 
+/** 按语言分段结果，用于混合语言 TTS 逐段朗读 */
+export interface TTSSegment {
+  text: string
+  lang: SupportedLanguage
+}
+
+/**
+ * 按书写系统将文本切分为语言段，避免「中文+日语」等混合内容用单一语音乱读/只读一部分。
+ * 思路：先按字符类型分块（日语假名 / CJK 汉字 / 拉丁等），每块再检测语言。
+ */
+export function segmentTextByLanguage(text: string): TTSSegment[] {
+  if (!text || !text.trim()) return []
+  const segments: TTSSegment[] = []
+  let i = 0
+  const isJa = (c: string) => /[\u3040-\u309F\u30A0-\u30FF]/.test(c)
+  const isCjk = (c: string) => /[\u4e00-\u9fa5]/.test(c)
+  while (i < text.length) {
+    const c = text[i]
+    let type: 'ja' | 'cjk' | 'other'
+    if (isJa(c)) type = 'ja'
+    else if (isCjk(c)) type = 'cjk'
+    else type = 'other'
+    let j = i
+    while (j < text.length) {
+      const d = text[j]
+      if (type === 'ja' && !isJa(d)) break
+      if (type === 'cjk' && !isCjk(d)) break
+      if (type === 'other' && (isJa(d) || isCjk(d))) break
+      j++
+    }
+    const run = text.slice(i, j).trim()
+    if (run.length > 0) {
+      const lang: SupportedLanguage = type === 'ja' ? 'ja' : type === 'cjk' ? detectLanguage(run) : detectLanguage(run)
+      segments.push({ text: run, lang })
+    }
+    i = j
+  }
+  return segments
+}
+
+/**
+ * 按「」括号切分：括号内为原文（用源语言读），括号外为译文说明（用目标语言读）。
+ * 优化：对「」外的内容也进行语言检测，识别其中夹杂的源语言词汇（如中文解释中的德语词）并用正确语言读。
+ */
+export function segmentTextByQuotedOriginal(
+  text: string,
+  sourceLang: SupportedLanguage,
+  targetLang: SupportedLanguage
+): TTSSegment[] {
+  if (!text || !text.trim()) return []
+  const segments: TTSSegment[] = []
+  let i = 0
+  const len = text.length
+  while (i < len) {
+    const open = text.indexOf('「', i)
+    if (open === -1) {
+      const rest = text.slice(i).trim()
+      if (rest.length > 0) {
+        // 「」外的内容：先按书写系统分段，再检测每段的语言
+        // 如果检测到源语言特征（如德语词），用源语言读；否则用目标语言
+        const subSegments = segmentTextByLanguage(rest)
+        for (const sub of subSegments) {
+          // 如果检测到的语言是源语言，用源语言读；否则用目标语言
+          const lang = sub.lang === sourceLang ? sourceLang : targetLang
+          segments.push({ text: sub.text, lang })
+        }
+      }
+      break
+    }
+    const before = text.slice(i, open).trim()
+    if (before.length > 0) {
+      // 「」前的内容：同样分段检测
+      const subSegments = segmentTextByLanguage(before)
+      for (const sub of subSegments) {
+        const lang = sub.lang === sourceLang ? sourceLang : targetLang
+        segments.push({ text: sub.text, lang })
+      }
+    }
+    const close = text.indexOf('」', open + 1)
+    if (close === -1) {
+      const rest = text.slice(open + 1).trim()
+      if (rest.length > 0) segments.push({ text: rest, lang: sourceLang })
+      break
+    }
+    const inside = text.slice(open + 1, close).trim()
+    if (inside.length > 0) segments.push({ text: inside, lang: sourceLang })
+    i = close + 1
+  }
+  return segments
+}
+
 /**
  * TTS 类：封装语音合成功能
  * 
@@ -285,22 +424,116 @@ class TTSManager {
   
   // 语音缓存：为每种语言缓存选择的语音，确保同一语言使用同一个语音引擎
   // 格式：{ 'en-US': SpeechSynthesisVoice, 'zh-CN': SpeechSynthesisVoice, ... }
-  // 这样可以确保原文和翻译使用同一个语音（如果语言相同）
   private voiceCache: Map<string, SpeechSynthesisVoice> = new Map()
 
+  // 所有语音列表缓存：避免重复调用 getVoices()，提升启动速度
+  private allVoicesCache: SpeechSynthesisVoice[] | null = null
+  private voicesLoaded = false
+
+  // 混合语言分段播放队列；stop() 会清空并触发 segmentOnEnd
+  private segmentQueue: TTSSegment[] = []
+  private segmentIndex = 0
+  private segmentOnEnd?: () => void
+  private segmentOnError?: (error: Error) => void
+  private segmentUnifiedRate?: number // 分段播放的统一语速（用于对齐原文语速）
+
   /**
-   * 初始化 TTS
-   * 检查浏览器是否支持 SpeechSynthesis API
+   * 初始化 TTS：预加载语音列表，减少首次播放延迟
    */
   constructor() {
-    // 检查浏览器是否支持 SpeechSynthesis API
-    // 现代浏览器（Chrome, Firefox, Safari, Edge）都支持
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       this.synthesis = window.speechSynthesis
       this.initialized = true
+      // 预加载语音列表：监听 voiceschanged 事件，提前加载所有语音
+      this.preloadVoices()
     } else {
       console.warn('浏览器不支持 SpeechSynthesis API')
       this.initialized = false
+    }
+  }
+
+  /**
+   * 预加载语音列表：在用户首次点击发音前就加载好，减少启动延迟
+   */
+  private preloadVoices(): void {
+    if (!this.synthesis) return
+    
+    // 立即尝试获取（某些浏览器第一次调用就能获取）
+    const initialVoices = this.synthesis.getVoices()
+    if (initialVoices.length > 0) {
+      this.allVoicesCache = initialVoices
+      this.voicesLoaded = true
+      this.precomputeVoiceCache()
+      console.log(`[TTS] 预加载完成：${initialVoices.length} 个语音`)
+      return
+    }
+
+    // 如果为空，监听 voiceschanged 事件（Chrome 等需要用户交互后才能加载）
+    const loadVoices = () => {
+      const voices = this.synthesis?.getVoices() || []
+      if (voices.length > 0 && !this.voicesLoaded) {
+        this.allVoicesCache = voices
+        this.voicesLoaded = true
+        this.precomputeVoiceCache()
+        console.log(`[TTS] 语音列表加载完成：${voices.length} 个语音`)
+        // 移除监听器（只监听一次）
+        this.synthesis?.removeEventListener('voiceschanged', loadVoices)
+      }
+    }
+    
+    this.synthesis.addEventListener('voiceschanged', loadVoices)
+    
+    // 如果 1 秒后还没加载，尝试手动触发（某些浏览器需要）
+    setTimeout(() => {
+      if (!this.voicesLoaded && this.synthesis) {
+        const voices = this.synthesis.getVoices()
+        if (voices.length > 0) {
+          loadVoices()
+        }
+      }
+    }, 1000)
+  }
+
+  /**
+   * 预计算并缓存每种语言的最佳语音，避免每次 speak() 时重新计算
+   */
+  private precomputeVoiceCache(): void {
+    if (!this.allVoicesCache) return
+    
+    const score = (v: SpeechSynthesisVoice): number => {
+      const n = v.name.toLowerCase()
+      if (n.includes('neural') || n.includes('premium') || n.includes('enhanced') || n.includes('natural')) return 100
+      if (n.includes('google ') || n.includes('samantha') || n.includes('daniel') || n.includes('zira')) return 90
+      if (n.includes('female') || n.includes('karen') || n.includes('tessa') || n.includes('victoria')) return 70
+      if (v.localService) return 60
+      if (n.includes('compact') || n.includes('mobile') || n.includes('robotic')) return 10
+      return 50
+    }
+
+    // 为每种支持的语言预选最佳语音
+    const langConfigs = ['en-US', 'de-DE', 'zh-CN', 'fr-FR', 'ja-JP', 'es-ES']
+    for (const lang of langConfigs) {
+      const langPrefix = lang.split('-')[0].toLowerCase()
+      let candidates = this.allVoicesCache.filter(v => 
+        v.lang.toLowerCase().startsWith(langPrefix)
+      )
+      
+      if (langPrefix === 'en' && candidates.length > 1) {
+        const noIndia = candidates.filter(v => {
+          const vLang = v.lang.toLowerCase()
+          return !(vLang === 'en-in' || vLang.includes('india') || (v.name && v.name.toLowerCase().includes('india')))
+        })
+        if (noIndia.length > 0) candidates = noIndia
+        const us = candidates.filter(v => v.lang.toLowerCase().startsWith('en-us'))
+        const gb = candidates.filter(v => v.lang.toLowerCase().startsWith('en-gb'))
+        const rest = candidates.filter(v => !v.lang.toLowerCase().startsWith('en-us') && !v.lang.toLowerCase().startsWith('en-gb'))
+        candidates = [...us, ...gb, ...rest]
+      }
+      
+      if (candidates.length > 0) {
+        const sorted = [...candidates].sort((a, b) => score(b) - score(a))
+        this.voiceCache.set(lang, sorted[0])
+      }
     }
   }
 
@@ -313,13 +546,7 @@ class TTSManager {
   }
 
   /**
-   * 获取可用的语音列表
-   * 
-   * SpeechSynthesis API 会返回浏览器支持的所有语音
-   * 不同操作系统和浏览器支持的语音不同
-   * 
-   * 注意：在某些浏览器中，getVoices() 可能需要等待 voiceschanged 事件
-   * 才能返回完整的语音列表
+   * 获取可用的语音列表（优化：优先使用缓存，减少延迟）
    * 
    * @param lang - 语言代码（如 'en-US', 'de-DE', 'zh-CN'）
    * @returns 该语言的可用语音列表
@@ -329,31 +556,40 @@ class TTSManager {
       return []
     }
 
-    // 获取所有可用的语音
-    const voices = this.synthesis.getVoices()
+    // 优先使用缓存的语音列表（如果已加载）
+    let voices = this.allVoicesCache
+    if (!voices || voices.length === 0) {
+      // 缓存未加载，实时获取（首次调用或缓存失效）
+      voices = this.synthesis.getVoices()
+      if (voices.length > 0) {
+        this.allVoicesCache = voices
+        this.voicesLoaded = true
+        // 如果缓存为空但这次获取到了，更新预计算缓存
+        if (this.voiceCache.size === 0) {
+          this.precomputeVoiceCache()
+        }
+      }
+    }
     
     if (!lang) {
-      return voices
+      return voices || []
     }
 
-    const langPrefix = lang.split('-')[0].toLowerCase() // 'zh-CN' -> 'zh'
-    const langRegion = (lang.split('-')[1] || '').toLowerCase() // 'en-US' -> 'us'
+    const langPrefix = lang.split('-')[0].toLowerCase()
     let list = voices.filter(voice => {
       const voiceLang = voice.lang.toLowerCase()
       return voiceLang.startsWith(langPrefix)
     })
 
-    // 英语时优先美/英口音，排除印度英语（en-IN），避免误选成印度口音
+    // 英语时优先美/英口音，排除印度英语
     if (langPrefix === 'en' && list.length > 1) {
       const noIndia = list.filter(v => {
         const vLang = v.lang.toLowerCase()
-        const isIndia = vLang === 'en-in' || vLang.includes('india') || (v.name && v.name.toLowerCase().includes('india'))
-        return !isIndia
+        return !(vLang === 'en-in' || vLang.includes('india') || (v.name && v.name.toLowerCase().includes('india')))
       })
       if (noIndia.length > 0) {
         list = noIndia
       }
-      // 进一步优先 en-US，其次 en-GB
       const us = list.filter(v => v.lang.toLowerCase().startsWith('en-us'))
       const gb = list.filter(v => v.lang.toLowerCase().startsWith('en-gb'))
       const rest = list.filter(v => !v.lang.toLowerCase().startsWith('en-us') && !v.lang.toLowerCase().startsWith('en-gb'))
@@ -381,12 +617,14 @@ class TTSManager {
    * @param language - 语言类型（可选，如果不提供会自动检测）
    * @param onEnd - 播放结束的回调函数
    * @param onError - 播放出错的回调函数
+   * @param customRate - 自定义语速（可选，用于统一所有发音位置的语速）
    */
   speak(
     text: string,
     language?: SupportedLanguage,
     onEnd?: () => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
+    customRate?: number
   ): void {
     // 检查是否支持
     if (!this.isSupported() || !this.synthesis) {
@@ -400,30 +638,31 @@ class TTSManager {
       return
     }
 
-    // 停止当前播放（如果正在播放）
-    this.stop()
+    // 非分段播放时才在开始时 stop，避免 speakSegmented 链式调用时打断下一段
+    if (this.segmentQueue.length === 0) {
+      this.stop()
+    }
 
     // 自动检测语言（如果没有指定）
     const detectedLang = language || detectLanguage(text)
+    // 符号规范化：@ / # 等按语言转为可读词，避免中文读成「小老鼠」等
+    text = normalizeTextForTTS(text, detectedLang)
     
     // 获取语言配置
     const config = LANGUAGE_CONFIGS[detectedLang]
 
-    // 检查系统是否支持该语言的语音
-    // 注意：getVoices() 可能需要等待 voiceschanged 事件
-    // 如果 voices 列表为空，等待一下再重试
+    // 优化：优先使用缓存的语音，减少延迟
+    // 如果缓存中有该语言的语音，直接使用，避免重复计算
     let availableVoices = this.getVoices(config.lang)
     
-    // 如果语音列表为空，可能是还没加载完成，尝试重新获取
-    if (availableVoices.length === 0 && this.synthesis) {
+    // 如果语音列表为空且缓存未加载，尝试立即获取（某些浏览器首次调用需要用户交互）
+    if (availableVoices.length === 0 && !this.voicesLoaded && this.synthesis) {
       const allVoices = this.synthesis.getVoices()
-      if (allVoices.length === 0) {
-        // 语音列表还没加载，尝试触发加载
-        // 注意：某些浏览器需要用户交互后才能加载语音列表
-        // 这里我们直接继续，如果失败会在错误处理中提示
-        console.warn('[TTS] 语音列表为空，可能还未加载完成')
-      } else {
-        // 重新获取该语言的语音
+      if (allVoices.length > 0) {
+        // 更新缓存并重新获取
+        this.allVoicesCache = allVoices
+        this.voicesLoaded = true
+        this.precomputeVoiceCache()
         availableVoices = this.getVoices(config.lang)
       }
     }
@@ -448,7 +687,7 @@ class TTSManager {
           // 使用英语配置
           const utterance = new SpeechSynthesisUtterance(text)
           utterance.lang = englishConfig.lang
-          utterance.rate = englishConfig.rate
+          utterance.rate = customRate ?? englishConfig.rate // 统一语速
           utterance.pitch = englishConfig.pitch
           utterance.volume = englishConfig.volume
           
@@ -459,17 +698,19 @@ class TTSManager {
             utterance.voice = englishVoices[0]
           }
           
-          // 设置事件监听器
+          // 设置事件监听器（优化：减少日志延迟）
           utterance.onstart = () => {
-            console.log(`开始播放语音（使用英语语音）：${text.substring(0, 20)}...`)
+            // 开发环境才输出日志
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[TTS] 开始播放（英语替代）：${text.substring(0, 20)}...`)
+            }
           }
           utterance.onend = () => {
-            console.log('语音播放结束')
             this.currentUtterance = null
             onEnd?.()
           }
           utterance.onerror = (event) => {
-            console.error('语音播放出错：', event.error)
+            console.error('[TTS] 语音播放出错：', event.error)
             this.currentUtterance = null
             onError?.(new Error(event.error || '未知错误'))
           }
@@ -493,44 +734,26 @@ class TTSManager {
     // 设置语言
     utterance.lang = config.lang
 
-    // 设置语音参数
-    utterance.rate = config.rate // 语速
+    // 设置语音参数：优先使用自定义语速（统一所有发音位置的语速），否则使用语言默认语速
+    utterance.rate = customRate ?? config.rate // 语速
     utterance.pitch = config.pitch // 音调
     utterance.volume = config.volume // 音量
 
-    // 尝试选择最佳语音（优先选择高质量、自然的语音引擎）
-    // 策略：优先使用缓存的语音，确保同一语言使用同一个语音引擎
-    // 这样可以保证原文和翻译使用同一个声音（如果语言相同）
+    // 优化：优先使用预计算的缓存语音，几乎零延迟
     if (availableVoices.length > 0) {
-      // 检查是否有缓存的语音（确保同一语言使用同一个语音）
       let selectedVoice = this.voiceCache.get(config.lang)
       
-      // 如果缓存中没有，或者缓存的语音不在可用列表中，重新选择
+      // 如果缓存中没有或不在可用列表中，快速选择（使用预计算的排序逻辑）
       if (!selectedVoice || !availableVoices.includes(selectedVoice)) {
-        // 按「自然度」打分：Neural/Premium/Enhanced/Google 等优先，避免 Compact/Mobile 等机械声
-        const score = (v: SpeechSynthesisVoice): number => {
-          const n = v.name.toLowerCase()
-          if (n.includes('neural') || n.includes('premium') || n.includes('enhanced') || n.includes('natural')) return 100
-          if (n.includes('google ') || n.includes('samantha') || n.includes('daniel') || n.includes('zira')) return 90
-          if (n.includes('female') || n.includes('karen') || n.includes('tessa') || n.includes('victoria')) return 70
-          if (v.localService) return 60
-          if (n.includes('compact') || n.includes('mobile') || n.includes('robotic')) return 10
-          return 50
-        }
-        const sorted = [...availableVoices].sort((a, b) => score(b) - score(a))
-        selectedVoice = sorted[0]
-        
-        // 缓存选择的语音，确保同一语言使用同一个语音引擎
+        // 快速选择：优先使用第一个可用语音（getVoices 已排序）
+        selectedVoice = availableVoices[0]
+        // 更新缓存
         if (selectedVoice) {
           this.voiceCache.set(config.lang, selectedVoice)
-          console.log(`[TTS] 选择并缓存语音：${selectedVoice.name} (${selectedVoice.lang})`)
         }
-      } else {
-        // 使用缓存的语音
-        console.log(`[TTS] 使用缓存的语音：${selectedVoice.name} (${selectedVoice.lang})`)
       }
       
-      // 设置选中的语音
+      // 设置语音（如果已预加载，这一步几乎无延迟）
       if (selectedVoice) {
         utterance.voice = selectedVoice
       }
@@ -538,26 +761,21 @@ class TTSManager {
 
     // 设置事件监听器
 
-    // 播放开始事件
+    // 播放开始事件（优化：减少日志输出，降低延迟）
     utterance.onstart = () => {
-      console.log(`[TTS] 开始播放语音（${config.lang}）：${text.substring(0, 20)}...`)
-      console.log(`[TTS] 使用的语音：`, utterance.voice?.name || '默认语音')
+      // 仅在开发环境输出详细日志
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[TTS] 开始播放（${config.lang}）：${text.substring(0, 20)}...`)
+      }
     }
 
-    // 播放结束事件
+    // 播放结束事件（优化：减少日志延迟）
     utterance.onend = () => {
-      console.log('[TTS] 语音播放结束')
       const wasUserStopped = this.isUserStopped
       this.currentUtterance = null
-      this.isUserStopped = false // 重置标志
-      
-      // 如果是用户主动停止，不调用 onError，只调用 onEnd
-      if (wasUserStopped) {
-        console.log('[TTS] 用户主动停止播放')
-        onEnd?.() // 正常结束回调
-      } else {
-        onEnd?.() // 正常结束回调
-      }
+      this.isUserStopped = false
+      // 直接调用 onEnd，不区分用户停止和正常结束（都是正常结束）
+      onEnd?.()
     }
 
     // 播放错误事件
@@ -608,8 +826,115 @@ class TTSManager {
     this.currentUtterance = utterance
 
     // 开始播放
-    // speak() 方法是异步的，不会阻塞代码执行
     this.synthesis.speak(utterance)
+  }
+
+  /**
+   * 混合语言分段朗读：先按书写系统切分（日/中/拉丁等），再逐段用对应语言朗读，避免只读一部分或乱读。
+   * @param text - 整段文本（可能含中文+日语等）
+   * @param defaultLang - 可选；单段或无法分段时使用的语言
+   * @param onEnd - 全部读完或用户停止时调用
+   * @param onError - 任一段出错时调用
+   * @param unifiedRate - 统一语速（可选，用于对齐原文语速）
+   */
+  speakSegmented(
+    text: string,
+    defaultLang?: SupportedLanguage,
+    onEnd?: () => void,
+    onError?: (error: Error) => void,
+    unifiedRate?: number
+  ): void {
+    if (!this.isSupported() || !text?.trim()) {
+      onEnd?.()
+      return
+    }
+    const segments = segmentTextByLanguage(text)
+    if (segments.length === 0) {
+      onEnd?.()
+      return
+    }
+    if (segments.length === 1) {
+      const lang = defaultLang ?? segments[0].lang
+      this.speak(segments[0].text, lang, onEnd, onError, unifiedRate)
+      return
+    }
+    this.segmentQueue = segments
+    this.segmentIndex = 0
+    this.segmentOnEnd = onEnd
+    this.segmentOnError = onError
+    this.segmentUnifiedRate = unifiedRate
+    this.speakNextSegment()
+  }
+
+  /**
+   * 按预分段列表顺序朗读（用于「」圈出原文：圈内用源语言，圈外用目标语言）。
+   * @param segments - 已切好的 { text, lang } 列表
+   * @param onEnd - 全部读完或用户停止时调用
+   * @param onError - 任一段出错时调用
+   * @param unifiedRate - 统一语速（可选，用于对齐原文语速）
+   */
+  speakSegments(
+    segments: TTSSegment[],
+    onEnd?: () => void,
+    onError?: (error: Error) => void,
+    unifiedRate?: number
+  ): void {
+    if (!this.isSupported()) {
+      onEnd?.()
+      return
+    }
+    if (!segments || segments.length === 0) {
+      onEnd?.()
+      return
+    }
+    const filtered = segments.filter(s => s.text && s.text.trim().length > 0)
+    if (filtered.length === 0) {
+      onEnd?.()
+      return
+    }
+    if (filtered.length === 1) {
+      this.speak(filtered[0].text, filtered[0].lang, onEnd, onError, unifiedRate)
+      return
+    }
+    this.segmentQueue = filtered
+    this.segmentIndex = 0
+    this.segmentOnEnd = onEnd
+    this.segmentOnError = onError
+    this.segmentUnifiedRate = unifiedRate
+    this.speakNextSegment()
+  }
+
+  private speakNextSegment(): void {
+    if (this.segmentIndex >= this.segmentQueue.length || !this.synthesis) {
+      const done = this.segmentOnEnd
+      this.segmentQueue = []
+      this.segmentIndex = 0
+      this.segmentOnEnd = undefined
+      this.segmentOnError = undefined
+      this.segmentUnifiedRate = undefined
+      done?.()
+      return
+    }
+    const seg = this.segmentQueue[this.segmentIndex]
+    this.segmentIndex++
+    this.speak(
+      seg.text,
+      seg.lang,
+      () => {
+        // 优化段间切换：使用极短延迟（20ms）让浏览器有时间切换不同语言的语音引擎
+        setTimeout(() => this.speakNextSegment(), 20)
+      },
+      (err) => {
+        this.segmentQueue = []
+        this.segmentIndex = 0
+        this.segmentOnError?.(err)
+        this.segmentOnEnd?.()
+        this.segmentOnEnd = undefined
+        this.segmentOnError = undefined
+        this.segmentUnifiedRate = undefined
+      },
+      this.segmentUnifiedRate // 使用统一语速
+    )
   }
 
   /**
@@ -666,18 +991,19 @@ class TTSManager {
     }
 
     // 标记为用户主动停止
-    // 这样在 onerror 事件中，如果是 'interrupted' 错误，就不会当作错误处理
     this.isUserStopped = true
+    const onEnd = this.segmentOnEnd
+    this.segmentQueue = []
+    this.segmentIndex = 0
+    this.segmentOnEnd = undefined
+    this.segmentOnError = undefined
+    this.segmentUnifiedRate = undefined
 
-    // 停止所有正在播放的语音
-    // cancel() 会立即停止所有语音，包括队列中的
-    // 注意：调用 cancel() 会触发 utterance.onerror 事件，错误代码为 'interrupted'
+    // 停止所有正在播放的语音（含队列中的）
     this.synthesis.cancel()
-    
-    // 清除当前 utterance 引用
-    // 注意：不要在这里重置 isUserStopped，因为 onerror 事件可能还没触发
-    // 让 onerror 或 onend 事件处理函数来重置它
     this.currentUtterance = null
+
+    if (onEnd) onEnd()
   }
   
   /**

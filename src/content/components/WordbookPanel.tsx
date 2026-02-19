@@ -13,7 +13,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { Search, Trash2, Download, X, BookOpen, Volume2, VolumeX, Play } from 'lucide-react'
 import { WordbookEntry } from '../../services/wordbook'
 import { useWordbook } from '../hooks/useWordbook'
-import { ttsManager, detectLanguage, type SupportedLanguage } from '../../utils/tts'
+import { ttsManager, detectLanguage, segmentTextByQuotedOriginal, type SupportedLanguage } from '../../utils/tts'
 import FlashcardMode from './FlashcardMode'
 
 interface WordbookPanelProps {
@@ -33,8 +33,9 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   // 选中的单词（用于批量删除）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   
-  // 正在播放语音的单词 ID（用于显示播放状态）
+  // 正在播放的条目与区域：与翻译窗口一致，用于高亮对应发音按钮
   const [playingWordId, setPlayingWordId] = useState<string | null>(null)
+  const [playingPart, setPlayingPart] = useState<'original' | 'translation' | 'grammar' | 'context' | null>(null)
   
   // 是否显示闪卡学习模式
   const [showFlashcardMode, setShowFlashcardMode] = useState(false)
@@ -140,38 +141,99 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
     }
   }
   
-  // 处理发音按钮点击：朗读单词原文
-  const handlePronounce = (word: WordbookEntry) => {
-    // 如果正在播放这个单词，停止播放
-    if (playingWordId === word.id) {
+  // 与翻译窗口一致：优先用保存时的源语言（记忆机制），否则再检测；语法/语境按「」分段
+  const sourceLang = (w: WordbookEntry): SupportedLanguage =>
+    (w.sourceLanguage ?? detectLanguage(w.originalText)) as SupportedLanguage
+  const targetLang = (w: WordbookEntry): SupportedLanguage =>
+    w.translation ? detectLanguage(w.translation) : detectLanguage(w.originalText)
+
+  const handlePronounceOriginal = (word: WordbookEntry) => {
+    if (playingWordId === word.id && playingPart === 'original') {
       ttsManager.stop()
       setPlayingWordId(null)
+      setPlayingPart(null)
       return
     }
-    
-    // 停止其他正在播放的单词
-    if (playingWordId) {
-      ttsManager.stop()
-    }
-    
-    // 检测语言
-    const detectedLang = detectLanguage(word.originalText)
-    
-    // 开始播放
+    ttsManager.stop()
     setPlayingWordId(word.id)
-    
+    setPlayingPart('original')
     ttsManager.speak(
       word.originalText,
-      detectedLang,
-      // 播放结束回调
-      () => {
+      sourceLang(word),
+      () => { setPlayingWordId(null); setPlayingPart(null) },
+      (err) => {
+        console.error('原文语音播放失败：', err)
         setPlayingWordId(null)
-      },
-      // 播放错误回调
-      (error) => {
-        console.error('语音播放失败：', error)
+        setPlayingPart(null)
+      }
+    )
+  }
+
+  const handlePronounceTranslation = (word: WordbookEntry) => {
+    if (playingWordId === word.id && playingPart === 'translation') {
+      ttsManager.stop()
+      setPlayingWordId(null)
+      setPlayingPart(null)
+      return
+    }
+    ttsManager.stop()
+    setPlayingWordId(word.id)
+    setPlayingPart('translation')
+    const lang = targetLang(word)
+    ttsManager.speak(
+      word.translation,
+      lang,
+      () => { setPlayingWordId(null); setPlayingPart(null) },
+      (err) => {
+        console.error('翻译语音播放失败：', err)
         setPlayingWordId(null)
-        alert(`语音播放失败：${error.message}\n请检查浏览器设置或系统语音配置`)
+        setPlayingPart(null)
+      }
+    )
+  }
+
+  const handlePronounceGrammar = (word: WordbookEntry) => {
+    if (!word.grammar) return
+    if (playingWordId === word.id && playingPart === 'grammar') {
+      ttsManager.stop()
+      setPlayingWordId(null)
+      setPlayingPart(null)
+      return
+    }
+    ttsManager.stop()
+    setPlayingWordId(word.id)
+    setPlayingPart('grammar')
+    const segments = segmentTextByQuotedOriginal(word.grammar, sourceLang(word), targetLang(word))
+    ttsManager.speakSegments(
+      segments,
+      () => { setPlayingWordId(null); setPlayingPart(null) },
+      (err) => {
+        console.error('语法语音播放失败：', err)
+        setPlayingWordId(null)
+        setPlayingPart(null)
+      }
+    )
+  }
+
+  const handlePronounceContext = (word: WordbookEntry) => {
+    if (!word.context) return
+    if (playingWordId === word.id && playingPart === 'context') {
+      ttsManager.stop()
+      setPlayingWordId(null)
+      setPlayingPart(null)
+      return
+    }
+    ttsManager.stop()
+    setPlayingWordId(word.id)
+    setPlayingPart('context')
+    const segments = segmentTextByQuotedOriginal(word.context, sourceLang(word), targetLang(word))
+    ttsManager.speakSegments(
+      segments,
+      () => { setPlayingWordId(null); setPlayingPart(null) },
+      (err) => {
+        console.error('语境语音播放失败：', err)
+        setPlayingWordId(null)
+        setPlayingPart(null)
       }
     )
   }
@@ -250,8 +312,8 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
 
         {/* 工具栏 */}
         <div className="px-5 py-3 space-y-3" style={{ borderBottom: '1px solid var(--notion-border)' }}>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px] relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--notion-text-tertiary)' }} strokeWidth={2} />
               <input
                 type="text"
@@ -377,16 +439,16 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
                               {word.originalText}
                             </h3>
                             <button
-                              onClick={() => handlePronounce(word)}
+                              onClick={() => handlePronounceOriginal(word)}
                               className="w-7 h-7 flex items-center justify-center rounded transition-colors flex-shrink-0"
                               style={{
-                                color: playingWordId === word.id ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
-                                background: playingWordId === word.id ? 'rgba(35, 131, 226, 0.1)' : 'var(--notion-hover)'
+                                color: playingWordId === word.id && playingPart === 'original' ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                                background: playingWordId === word.id && playingPart === 'original' ? 'rgba(35, 131, 226, 0.1)' : 'var(--notion-hover)'
                               }}
-                              aria-label={playingWordId === word.id ? '停止播放' : '播放发音'}
-                              title={playingWordId === word.id ? '停止播放' : '播放发音'}
+                              aria-label={playingWordId === word.id && playingPart === 'original' ? '停止播放' : '播放原文'}
+                              title={playingWordId === word.id && playingPart === 'original' ? '停止播放' : '播放原文'}
                             >
-                              {playingWordId === word.id ? (
+                              {playingWordId === word.id && playingPart === 'original' ? (
                                 <VolumeX className="w-3.5 h-3.5" strokeWidth={2} />
                               ) : (
                                 <Volume2 className="w-3.5 h-3.5" strokeWidth={2} />
@@ -411,19 +473,73 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
                           <Trash2 className="w-3.5 h-3.5" strokeWidth={2} />
                         </button>
                       </div>
-                      <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--notion-text)' }}>
-                        {word.translation}
-                      </p>
+                      <div className="flex items-start gap-2 mb-2">
+                        <p className="text-sm leading-relaxed flex-1 min-w-0" style={{ color: 'var(--notion-text)' }}>
+                          {word.translation}
+                        </p>
+                        <button
+                          onClick={() => handlePronounceTranslation(word)}
+                          className="w-6 h-6 flex items-center justify-center rounded flex-shrink-0 mt-0.5"
+                          style={{
+                            color: playingWordId === word.id && playingPart === 'translation' ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                            background: playingWordId === word.id && playingPart === 'translation' ? 'rgba(35, 131, 226, 0.1)' : 'transparent'
+                          }}
+                          aria-label={playingWordId === word.id && playingPart === 'translation' ? '停止播放' : '播放翻译'}
+                          title={playingWordId === word.id && playingPart === 'translation' ? '停止播放' : '播放翻译'}
+                        >
+                          {playingWordId === word.id && playingPart === 'translation' ? (
+                            <VolumeX className="w-3 h-3" strokeWidth={2} />
+                          ) : (
+                            <Volume2 className="w-3 h-3" strokeWidth={2} />
+                          )}
+                        </button>
+                      </div>
                       {word.grammar && (
                         <div className="notion-card mt-2 p-2 text-xs">
-                          <span style={{ color: 'var(--notion-text-secondary)' }}>语法：</span>
-                          <span className="ml-1" style={{ color: 'var(--notion-text)' }}>{word.grammar}</span>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span style={{ color: 'var(--notion-text-secondary)' }}>语法：</span>
+                            <button
+                              onClick={() => handlePronounceGrammar(word)}
+                              className="w-6 h-6 flex items-center justify-center rounded flex-shrink-0"
+                              style={{
+                                color: playingWordId === word.id && playingPart === 'grammar' ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                                background: playingWordId === word.id && playingPart === 'grammar' ? 'rgba(35, 131, 226, 0.1)' : 'transparent'
+                              }}
+                              aria-label={playingWordId === word.id && playingPart === 'grammar' ? '停止播放' : '播放语法'}
+                              title={playingWordId === word.id && playingPart === 'grammar' ? '停止播放' : '播放语法'}
+                            >
+                              {playingWordId === word.id && playingPart === 'grammar' ? (
+                                <VolumeX className="w-3 h-3" strokeWidth={2} />
+                              ) : (
+                                <Volume2 className="w-3 h-3" strokeWidth={2} />
+                              )}
+                            </button>
+                          </div>
+                          <span className="block" style={{ color: 'var(--notion-text)' }}>{word.grammar}</span>
                         </div>
                       )}
                       {word.context && (
                         <div className="notion-card mt-2 p-2 text-xs">
-                          <span style={{ color: 'var(--notion-text-secondary)' }}>语境：</span>
-                          <span className="ml-1" style={{ color: 'var(--notion-text)' }}>{word.context}</span>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span style={{ color: 'var(--notion-text-secondary)' }}>语境：</span>
+                            <button
+                              onClick={() => handlePronounceContext(word)}
+                              className="w-6 h-6 flex items-center justify-center rounded flex-shrink-0"
+                              style={{
+                                color: playingWordId === word.id && playingPart === 'context' ? 'var(--notion-accent)' : 'var(--notion-text-secondary)',
+                                background: playingWordId === word.id && playingPart === 'context' ? 'rgba(35, 131, 226, 0.1)' : 'transparent'
+                              }}
+                              aria-label={playingWordId === word.id && playingPart === 'context' ? '停止播放' : '播放语境'}
+                              title={playingWordId === word.id && playingPart === 'context' ? '停止播放' : '播放语境'}
+                            >
+                              {playingWordId === word.id && playingPart === 'context' ? (
+                                <VolumeX className="w-3 h-3" strokeWidth={2} />
+                              ) : (
+                                <Volume2 className="w-3 h-3" strokeWidth={2} />
+                              )}
+                            </button>
+                          </div>
+                          <span className="block" style={{ color: 'var(--notion-text)' }}>{word.context}</span>
                         </div>
                       )}
                       <div className="mt-2 text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
@@ -437,6 +553,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
           )}
         </div>
       </div>
+
     </div>
   )
 }

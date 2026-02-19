@@ -167,8 +167,10 @@ class WordbookService {
     const storage = await this.getWordbook()
     
     // 检查是否已存在（基于原始文本）
+    // 💡 使用 trim() 和标准化比较，避免空白字符和大小写导致的重复
+    const normalizedOriginal = translationResult.originalText.trim()
     const existingIndex = storage.words.findIndex(
-      word => word.originalText.toLowerCase() === translationResult.originalText.toLowerCase()
+      word => word.originalText.trim().toLowerCase() === normalizedOriginal.toLowerCase()
     )
     
     if (existingIndex !== -1) {
@@ -187,20 +189,27 @@ class WordbookService {
     }
     
     // 创建新条目
-    // 确保 originalText 存在，如果不存在则使用 translation 作为备用
+    // 💡 确保 originalText 和 translation 都经过 trim() 处理，去除首尾空白
+    const trimmedOriginal = (translationResult.originalText || translationResult.translation || '').trim()
+    const trimmedTranslation = (translationResult.translation || '').trim()
+    
+    // 验证必需字段（trim 后不能为空）
+    if (!trimmedOriginal || trimmedOriginal.length === 0) {
+      throw new Error('翻译结果缺少必需字段：originalText 不能为空')
+    }
+    if (!trimmedTranslation || trimmedTranslation.length === 0) {
+      throw new Error('翻译结果缺少必需字段：translation 不能为空')
+    }
+    
     const newEntry: WordbookEntry = {
       ...translationResult,
-      originalText: translationResult.originalText || translationResult.translation || '',
+      originalText: trimmedOriginal,
+      translation: trimmedTranslation,
       id: this.generateId(), // 生成唯一 ID
       createdAt: Date.now(),
       lastViewedAt: Date.now(),
       viewCount: 1,
       tags: []
-    }
-    
-    // 验证必需字段
-    if (!newEntry.originalText || !newEntry.translation) {
-      throw new Error('翻译结果缺少必需字段：originalText 或 translation')
     }
     
     // 添加到列表（最新的在前面）
@@ -392,29 +401,33 @@ class WordbookService {
       }
       
       // 根据掌握状态和正确率设置下次复习时间
-      // 使用简单的间隔复习算法：1天、3天、7天、14天、30天
-      const intervals = [1, 3, 7, 14, 30] // 天数
-      const correctRate = word.correctCount && word.studyCount 
-        ? word.correctCount / word.studyCount 
-        : 0
-      
-      // 根据正确率选择复习间隔
-      let intervalIndex = 0
-      if (correctRate >= 0.8) {
-        intervalIndex = Math.min(4, Math.floor(correctRate * 5))
-      } else if (correctRate >= 0.6) {
-        intervalIndex = 2
-      } else if (correctRate >= 0.4) {
-        intervalIndex = 1
+      // 「不认识」：短期复习（2 分钟后再次出现，类似 Anki Again）
+      if (status === 'learning' && !isCorrect) {
+        const AGAIN_MINUTES = 2
+        word.nextReviewAt = Date.now() + AGAIN_MINUTES * 60 * 1000
+      } else {
+        // 使用简单的间隔复习算法：1天、3天、7天、14天、30天
+        const intervals = [1, 3, 7, 14, 30] // 天数
+        const correctRate = word.correctCount && word.studyCount
+          ? word.correctCount / word.studyCount
+          : 0
+
+        let intervalIndex = 0
+        if (correctRate >= 0.8) {
+          intervalIndex = Math.min(4, Math.floor(correctRate * 5))
+        } else if (correctRate >= 0.6) {
+          intervalIndex = 2
+        } else if (correctRate >= 0.4) {
+          intervalIndex = 1
+        }
+
+        if (status === 'mastered') {
+          intervalIndex = 4 // 30天
+        }
+
+        const intervalDays = intervals[intervalIndex]
+        word.nextReviewAt = Date.now() + intervalDays * 24 * 60 * 60 * 1000
       }
-      
-      // 如果已掌握，设置较长的复习间隔
-      if (status === 'mastered') {
-        intervalIndex = 4 // 30天
-      }
-      
-      const intervalDays = intervals[intervalIndex]
-      word.nextReviewAt = Date.now() + intervalDays * 24 * 60 * 60 * 1000
       
       // 保存
       await this.saveWordbook(storage)

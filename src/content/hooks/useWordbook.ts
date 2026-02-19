@@ -84,19 +84,38 @@ export function useWordbook(): UseWordbookReturn {
     setError(null)
     
     try {
-      // 验证数据完整性
-      if (!result.originalText) {
-        throw new Error('缺少原始文本（originalText）')
+      // 💡 验证数据完整性：确保 originalText 和 translation 都存在且非空
+      // 使用 trim() 去除首尾空白，但保留内部空白（德语等语言可能有空格）
+      const trimmedOriginal = result.originalText?.trim() || ''
+      const trimmedTranslation = result.translation?.trim() || ''
+      
+      if (!trimmedOriginal || trimmedOriginal.length === 0) {
+        console.error('[Content] 保存失败：originalText 为空', { originalText: result.originalText })
+        throw new Error('缺少原始文本（originalText）或文本为空')
       }
-      if (!result.translation) {
-        throw new Error('缺少翻译结果（translation）')
+      if (!trimmedTranslation || trimmedTranslation.length === 0) {
+        console.error('[Content] 保存失败：translation 为空', { translation: result.translation })
+        throw new Error('缺少翻译结果（translation）或翻译为空')
       }
       
-      console.log('[Content] 准备保存单词：', result)
+      // 💡 确保传递给后台的数据已经 trim 处理
+      const cleanedResult = {
+        ...result,
+        originalText: trimmedOriginal,
+        translation: trimmedTranslation
+      }
+      
+      console.log('[Content] 准备保存单词：', {
+        originalText: result.originalText.substring(0, 50),
+        translation: result.translation.substring(0, 50),
+        sourceLanguage: result.sourceLanguage,
+        hasGrammar: !!result.grammar,
+        hasContext: !!result.context
+      })
       
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_WORD',
-        data: result
+        data: cleanedResult
       }).catch((error) => {
         // 处理 Extension context invalidated 错误
         if (error.message && error.message.includes('Extension context invalidated')) {
@@ -226,6 +245,26 @@ export function useWordbook(): UseWordbookReturn {
   useEffect(() => {
     console.log('[useWordbook] 组件挂载，开始加载生词本数据')
     fetchWords()
+  }, [fetchWords])
+
+  // 监听存储变化：当其他组件（如 App.tsx）保存单词后，自动刷新列表
+  useEffect(() => {
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      console.log('[useWordbook] 存储变化事件：', { areaName, changes: Object.keys(changes) })
+      if (areaName === 'local' && changes.context_ai_wordbook) {
+        console.log('[useWordbook] 检测到生词本存储变化，自动刷新列表', changes.context_ai_wordbook)
+        // 延迟一小段时间确保存储已完全写入
+        setTimeout(() => {
+          fetchWords()
+        }, 100)
+      }
+    }
+    chrome.storage.onChanged.addListener(listener)
+    console.log('[useWordbook] 已注册存储变化监听器')
+    return () => {
+      chrome.storage.onChanged.removeListener(listener)
+      console.log('[useWordbook] 已移除存储变化监听器')
+    }
   }, [fetchWords])
 
   return {

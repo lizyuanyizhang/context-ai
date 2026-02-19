@@ -27,7 +27,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/*.js", "content/*.css"],
+      "resources": ["content/*.js", "content/*.css", "src/icons/toolbar-logo.png"],
       "matches": ["<all_urls>"]
     }
   ]

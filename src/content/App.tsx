@@ -266,18 +266,8 @@ function App() {
     }
   }
 
-  // 从浮动工具栏点击「加入生词本」：先把当前选中内容保存到生词本，再打开生词本面板（刚加入的会出现在列表中）
-  const handleOpenWordbookFromToolbar = async () => {
-    if (selectedText && selectedText.trim().length > 0) {
-      const success = await saveWord({
-        originalText: selectedText.trim(),
-        translation: selectedText.trim()
-      })
-      if (success) {
-        setSaveSuccess(true)
-        setTimeout(() => setSaveSuccess(false), 3000)
-      }
-    }
+  // 从浮动工具栏点击「生词本」：仅打开生词本面板，不自动保存当前选中内容
+  const handleOpenWordbookFromToolbar = () => {
     setShowWordbook(true)
   }
 
@@ -351,11 +341,66 @@ function App() {
           }}
           onClose={handlePanelClose}
           onSave={async (result) => {
-            const success = await saveWord(result)
-            if (success) {
-              setSaveSuccess(true)
-              setShowWordbook(true) // 加入后直接打开生词本，刚加入的已在列表中
-              setTimeout(() => setSaveSuccess(false), 3000)
+            try {
+              // 💡 验证数据完整性：确保 originalText 和 translation 都存在
+              const originalText = result.originalText?.trim() || ''
+              const translation = result.translation?.trim() || ''
+              
+              if (!originalText) {
+                console.error('[App] 保存失败：originalText 为空', { result })
+                alert('保存失败：原始文本为空，请重试')
+                return
+              }
+              
+              if (!translation) {
+                console.error('[App] 保存失败：translation 为空', { result })
+                alert('保存失败：翻译结果为空，请重试')
+                return
+              }
+              
+              console.log('[App] 保存单词到生词本：', {
+                originalText: originalText.substring(0, 50),
+                translation: translation.substring(0, 50),
+                sourceLanguage: result.sourceLanguage,
+                hasGrammar: !!result.grammar,
+                hasContext: !!result.context,
+                originalTextLength: originalText.length,
+                translationLength: translation.length
+              })
+              
+              // 💡 确保传递给 saveWord 的数据已经清理过
+              const cleanedResult = {
+                ...result,
+                originalText,
+                translation
+              }
+              
+              const success = await saveWord(cleanedResult)
+              console.log('[App] saveWord 返回结果：', success)
+              if (success) {
+                setSaveSuccess(true)
+                setTimeout(() => setSaveSuccess(false), 3000)
+                console.log('[App] 保存成功，已显示成功提示')
+                // 不自动弹出生词本，用户可点击工具栏「生词本」再打开
+                // 存储监听会自动刷新 WordbookPanel
+              } else {
+                console.error('[App] 保存失败：saveWord 返回 false')
+                const errorMsg = '保存到生词本失败，请检查控制台查看详细错误信息'
+                console.error('[App] 错误详情：', errorMsg)
+                alert(errorMsg)
+              }
+            } catch (err) {
+              console.error('[App] 保存单词异常：', err)
+              const errorMsg = `保存到生词本失败：${err instanceof Error ? err.message : '未知错误'}`
+              console.error('[App] 异常详情：', {
+                error: err,
+                result: result ? {
+                  hasOriginalText: !!result.originalText,
+                  hasTranslation: !!result.translation,
+                  sourceLanguage: result.sourceLanguage
+                } : 'result is null'
+              })
+              alert(errorMsg)
             }
           }}
           saveSuccess={saveSuccess}

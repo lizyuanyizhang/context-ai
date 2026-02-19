@@ -144,6 +144,7 @@ export function useTranslation(): UseTranslationReturn {
           context: response.data.context,
           phonetic: response.data.phonetic,
           pronunciation: response.data.pronunciation,
+          sepLink: response.data.sepLink,
           originalText: response.data.originalText || text
         })
       } else {
