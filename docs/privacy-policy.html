@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context AI - 隐私政策</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 0 auto; padding: 24px; line-height: 1.6; color: #333; }
+    h1 { font-size: 1.5em; margin-bottom: 0.5em; }
+    h2 { font-size: 1.2em; margin-top: 1.5em; }
+    p { margin: 0.5em 0; }
+    ul { margin: 0.5em 0; padding-left: 1.5em; }
+    table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f5f5; }
+    .updated { color: #666; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Context AI 隐私政策</h1>
+  <p class="updated">最后更新：2025-02</p>
+
+  <h2>一、概述</h2>
+  <p>Context AI（以下简称「本扩展」）是一款外语学习浏览器扩展，致力于保护用户隐私。本政策说明我们如何收集、使用和存储数据。</p>
+
+  <h2>二、数据存储</h2>
+  <h3>2.1 本地存储</h3>
+  <p>以下数据<strong>仅存储在您设备本地</strong>，不会上传到任何第三方服务器：</p>
+  <ul>
+    <li><strong>生词本数据</strong>：您保存的单词、翻译、语法等学习内容</li>
+    <li><strong>API 配置</strong>：您填写的服务商 API Key 和设置</li>
+    <li><strong>学习进度</strong>：闪卡复习状态、FSRS 算法相关数据</li>
+  </ul>
+  <p>存储方式：浏览器扩展的 <code>chrome.storage.local</code> / <code>browser.storage.local</code>。</p>
+
+  <h3>2.2 我们不收集</h3>
+  <ul>
+    <li>不收集个人身份信息（姓名、邮箱、电话等）</li>
+    <li>不收集浏览历史或网页内容</li>
+    <li>不进行行为追踪或数据分析</li>
+  </ul>
+
+  <h2>三、数据外发</h2>
+  <h3>3.1 翻译相关</h3>
+  <p>当您使用翻译功能时：</p>
+  <ul>
+    <li><strong>预翻译（LibreTranslate）</strong>：您选中的文字会发送到 LibreTranslate 的公开接口</li>
+    <li><strong>大模型增强</strong>：若您启用了大模型，选中的文字会发送到<strong>您自行配置</strong>的 API 服务商</li>
+  </ul>
+  <p>上述数据由您选择的服务商按其隐私政策处理。本扩展不控制、不存储这些第三方传输的内容。</p>
+
+  <h3>3.2 语音朗读</h3>
+  <p>语音朗读由浏览器内置或系统 TTS 完成，无需上传数据。</p>
+
+  <h2>四、权限说明</h2>
+  <table>
+    <tr><th>权限</th><th>用途</th></tr>
+    <tr><td>storage</td><td>本地保存生词本、API 配置、学习进度</td></tr>
+    <tr><td>activeTab</td><td>获取当前页选中文字以翻译</td></tr>
+    <tr><td>scripting</td><td>在页面注入翻译面板等 UI</td></tr>
+    <tr><td>&lt;all_urls&gt;</td><td>在任何网页上使用选中翻译功能</td></tr>
+  </table>
+
+  <h2>五、第三方服务</h2>
+  <p>LibreTranslate、您配置的 API 服务商（通义千问、DeepSeek 等）各有独立隐私政策。</p>
+
+  <h2>六、联系与更新</h2>
+  <p>本政策可能随功能更新而调整。如有隐私相关问题，请通过扩展的 GitHub 仓库 Issue 反馈。</p>
+  <p><strong>简明版</strong>：本扩展仅做本地存储和学习辅助；翻译时会把选中文字发送到您配置的 API 或 LibreTranslate。我们不会收集或售卖您的数据。</p>
+</body>
+</html>
