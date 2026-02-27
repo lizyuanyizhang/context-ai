@@ -18,7 +18,7 @@ import { useTranslation } from './hooks/useTranslation'
 import { useWordbook } from './hooks/useWordbook'
 import { createHighlight, removeHighlight, clearAllHighlights } from './utils/selectionHighlight'
 import { detectLanguage, ttsManager } from '../utils/tts'
-import { hybridLanguageDetect } from '../utils/hybridLanguageDetector'
+import { hybridLanguageDetectSync } from '../utils/hybridLanguageDetector'
 
 /** 用户可选的源语言：自动检测 或 指定语言（与翻译 API 一致，不含中文） */
 export type ManualSourceLang = 'auto' | 'en' | 'de' | 'fr' | 'ja' | 'es'
@@ -155,23 +155,14 @@ function App() {
       // 如果指定了目标语言，需要确定源语言
       targetLanguage = targetLang
       
-      // 确定源语言：用户手动选择优先，否则使用自动检测
+      // 确定源语言：用户手动选择优先，否则使用同步检测（秒级，避免 LLM 延迟）
       if (manualSourceLang !== 'auto') {
         apiLang = manualSourceLang
         console.log('[Context AI] 使用用户选择源语言:', apiLang, '翻译为:', targetLang)
       } else {
-        // 使用混合架构语言检测（FastText + 字符扫描 + LLM）
-        const detectionResult = await hybridLanguageDetect(textToTranslate)
-        const detectedLang = detectionResult.language
-        console.log('[Context AI] 语言检测结果:', {
-          text: textToTranslate.substring(0, 100),
-          language: detectedLang,
-          confidence: detectionResult.confidence,
-          method: detectionResult.method,
-          targetLang
-        })
-        // 如果检测到中文，源语言就是中文；否则使用检测到的语言
-        apiLang = detectedLang === 'zh' ? 'zh' : detectedLang
+        const detectionResult = hybridLanguageDetectSync(textToTranslate)
+        apiLang = detectionResult.language === 'zh' ? 'zh' : detectionResult.language
+        console.log('[Context AI] 语言检测(同步):', detectionResult.language, detectionResult.method)
       }
     } else {
       // 默认情况：外语翻译为中文
@@ -179,17 +170,9 @@ function App() {
         apiLang = manualSourceLang
         console.log('[Context AI] 使用用户选择语言:', apiLang)
       } else {
-        // 使用混合架构语言检测（FastText + 字符扫描 + LLM）
-        const detectionResult = await hybridLanguageDetect(textToTranslate)
-        const detectedLang = detectionResult.language
-        console.log('[Context AI] 语言检测结果:', {
-          text: textToTranslate.substring(0, 100),
-          language: detectedLang,
-          confidence: detectionResult.confidence,
-          method: detectionResult.method
-        })
-        // 如果检测到中文，源语言就是中文；否则使用检测到的语言
-        apiLang = detectedLang === 'zh' ? 'zh' : detectedLang
+        const detectionResult = hybridLanguageDetectSync(textToTranslate)
+        apiLang = detectionResult.language === 'zh' ? 'zh' : detectionResult.language
+        console.log('[Context AI] 语言检测(同步):', detectionResult.language, detectionResult.method)
       }
     }
     
@@ -284,10 +267,20 @@ function App() {
       return
     }
     
-    // 语言：用户手动选择优先，否则自动检测
-    const langForTts = manualSourceLang !== 'auto'
+    // 语言：用户手动选择优先，否则自动检测；当检测为中文但页面语言为日语时，回退到页面语言
+    let langForTts = manualSourceLang !== 'auto'
       ? manualSourceLang
       : detectLanguage(selectedText)
+    if (manualSourceLang === 'auto') {
+      const pageLang = (document.documentElement.lang || '').toLowerCase()
+      if (langForTts === 'zh') {
+        if (pageLang.startsWith('ja')) langForTts = 'ja' as any
+        else if (pageLang.startsWith('es')) langForTts = 'es' as any
+        else if (pageLang.startsWith('fr')) langForTts = 'fr' as any
+        else if (pageLang.startsWith('de')) langForTts = 'de' as any
+        else if (pageLang.startsWith('en')) langForTts = 'en' as any
+      }
+    }
     
     setIsPlaying(true)
     

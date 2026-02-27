@@ -11,7 +11,7 @@
 @tailwind utilities;
 
 /* ========== 豆包风格设计令牌（优化版） ========== */
-:root {
+#context-ai-root, :host, :root {
   /* 背景（豆包风格：更纯净的白色） */
   --notion-bg: #ffffff;
   --notion-bg-warm: #fafafa;
@@ -22,10 +22,10 @@
   --notion-text-secondary: #666666;
   --notion-text-tertiary: #999999;
 
-  /* 强调色（豆包风格：更现代的蓝色，带渐变） */
-  --notion-accent: #1890ff;
-  --notion-accent-hover: #40a9ff;
-  --notion-accent-gradient: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  /* 强调色（黑白配色：灰阶） */
+  --notion-accent: #555555;
+  --notion-accent-hover: #333333;
+  --notion-accent-gradient: linear-gradient(135deg, #555555 0%, #333333 100%);
 
   /* 边框与分割（豆包风格：更细腻的边框） */
   --notion-border: rgba(0, 0, 0, 0.06);
@@ -36,20 +36,20 @@
   --notion-hover-strong: rgba(0, 0, 0, 0.08);
   --notion-disabled: #d9d9d9;
 
-  /* 语义色（豆包风格：更柔和的颜色） */
-  --notion-error: #ff4d4f;
-  --notion-success: #52c41a;
-  --notion-warning: #faad14;
+  /* 语义色（黑白配色：灰阶） */
+  --notion-error: #666666;
+  --notion-success: #333333;
+  --notion-warning: #555555;
   
-  /* 特色：品牌渐变色 */
-  --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --brand-gradient-subtle: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  /* 特色：品牌渐变色（黑白配色：灰阶） */
+  --brand-gradient: linear-gradient(135deg, #555555 0%, #333333 100%);
+  --brand-gradient-subtle: linear-gradient(135deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.08) 100%);
 
   /* 兼容旧变量名（供未替换处使用） */
   --forest-dark: #37352f;
   --forest-medium: #787774;
-  --forest-accent: #2383e2;
-  --forest-accent-hover: #1a73c9;
+  --forest-accent: #555555;
+  --forest-accent-hover: #333333;
   --apple-bg: #fafafa;
   --apple-surface: #ffffff;
   --apple-border: #e8e8e8;
@@ -65,12 +65,41 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* 统一行高与排版基线；注意：rem 仍按宿主文档计算，避免使用 rem 控制尺寸 */
+  line-height: 1.6;
+  font-size: 16px;
   position: relative;
   z-index: 999999;
 }
 
+/* 确保插件内部在任何站点上都使用一致的排版与样式，避免被宿主网页的全局样式污染 */
 #context-ai-root * {
   box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif !important;
+}
+
+/* 在 Shadow DOM 中强制常用 Tailwind 字号映射为像素，避免宿主页修改 html 字体大小（rem 基线）导致 UI 缩放 */
+#context-ai-root .text-xs { font-size: 12px !important; }
+#context-ai-root .text-sm { font-size: 14px !important; }
+#context-ai-root .text-base { font-size: 16px !important; }
+#context-ai-root .text-lg { font-size: 18px !important; }
+
+/* 统一翻译面板在不同语言网页上的样式（字体、颜色、行高等） */
+.translation-panel {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif !important;
+  color: var(--notion-text);
+  line-height: 1.6;
+}
+
+.translation-panel * {
+  font-family: inherit !important;
+  color: inherit;
+}
+
+/* 统一顶部标题、按钮区域的高度和背景，避免被网页 reset 样式影响 */
+.translation-panel button {
+  font-family: inherit !important;
+  border-radius: 9999px;
 }
 
 /* ========== 浮动工具栏（豆包风格优化） ========== */
@@ -121,6 +150,17 @@
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slideUp {

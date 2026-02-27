@@ -30,7 +30,7 @@ export interface PreTranslateResult {
   translation: string
 }
 
-const PRE_TRANSLATE_TIMEOUT_MS = 5000
+const PRE_TRANSLATE_TIMEOUT_MS = 3000
 
 /**
  * 调用 LibreTranslate 做快速预翻译（无需 API Key，有频率限制）

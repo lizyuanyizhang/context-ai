@@ -13,7 +13,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { Search, Trash2, Download, X, BookOpen, Volume2, VolumeX, Play } from 'lucide-react'
 import { WordbookEntry } from '../../services/wordbook'
 import { useWordbook } from '../hooks/useWordbook'
-import { ttsManager, detectLanguage, segmentTextByQuotedOriginal, type SupportedLanguage } from '../../utils/tts'
+import { ttsManager, detectLanguage, segmentTextByQuotedOriginal, segmentTextByQuotesAndParentheses, type SupportedLanguage } from '../../utils/tts'
 import FlashcardMode from './FlashcardMode'
 
 interface WordbookPanelProps {
@@ -29,6 +29,13 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   
   // 搜索关键词
   const [searchQuery, setSearchQuery] = useState('')
+  // 已计次的条目（本次打开面板期间），避免重复上报
+  const [viewedIds, setViewedIds] = useState<Set<string>>(new Set())
+  // 本地覆盖的查看次数（即时反馈 UI）
+  const [viewCountOverrides, setViewCountOverrides] = useState<Record<string, number>>({})
+  // Item DOM 引用
+  const itemRefs = React.useRef<Map<string, HTMLElement>>(new Map())
+  const observerRef = React.useRef<IntersectionObserver | null>(null)
   
   // 选中的单词（用于批量删除）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -44,8 +51,60 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   useEffect(() => {
     if (isOpen) {
       refresh()
+      // 重置已查看集合与覆盖计数
+      setViewedIds(new Set())
+      setViewCountOverrides({})
     }
   }, [isOpen, refresh])
+
+  // 关闭面板或切换到闪卡模式时，停止语音播放
+  useEffect(() => {
+    if (!isOpen) {
+      ttsManager.stop()
+    }
+  }, [isOpen])
+  useEffect(() => {
+    if (showFlashcardMode) {
+      ttsManager.stop()
+    }
+  }, [showFlashcardMode])
+  useEffect(() => {
+    return () => {
+      ttsManager.stop()
+    }
+  }, [])
+
+  // 当列表变化时，使用 IntersectionObserver 监听曝光并上报一次查看
+  useEffect(() => {
+    if (!isOpen) return
+    // 清理旧 observer
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return
+        const el = entry.target as HTMLElement
+        const id = el.getAttribute('data-word-id') || ''
+        if (!id || viewedIds.has(id)) return
+        setViewedIds(prev => new Set(prev).add(id))
+        // 后台累加一次查看
+        chrome.runtime.sendMessage({ type: 'UPDATE_VIEW_TIME', id })
+          .then((res) => {
+            if (res?.success) {
+              // 本地计数 +1 即时反馈
+              const original = words.find(w => w.id === id)?.viewCount ?? 0
+              setViewCountOverrides(prev => ({ ...prev, [id]: (prev[id] ?? original) + 1 }))
+            }
+          })
+          .catch(() => { /* 忽略单次失败 */ })
+      })
+    }, { threshold: 0.25 })
+    observerRef.current = io
+    // 观察当前所有 item
+    itemRefs.current.forEach((node) => io.observe(node))
+    return () => io.disconnect()
+  }, [isOpen, words, viewedIds])
 
   // 过滤后的单词列表（根据搜索关键词）
   const filteredWords = useMemo(() => {
@@ -145,7 +204,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
   const sourceLang = (w: WordbookEntry): SupportedLanguage =>
     (w.sourceLanguage ?? detectLanguage(w.originalText)) as SupportedLanguage
   const targetLang = (w: WordbookEntry): SupportedLanguage =>
-    w.translation ? detectLanguage(w.translation) : detectLanguage(w.originalText)
+    (w.targetLanguage as SupportedLanguage) ?? (w.translation ? detectLanguage(w.translation) : detectLanguage(w.originalText))
 
   const handlePronounceOriginal = (word: WordbookEntry) => {
     if (playingWordId === word.id && playingPart === 'original') {
@@ -203,7 +262,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
     ttsManager.stop()
     setPlayingWordId(word.id)
     setPlayingPart('grammar')
-    const segments = segmentTextByQuotedOriginal(word.grammar, sourceLang(word), targetLang(word))
+    const segments = segmentTextByQuotesAndParentheses(word.grammar, sourceLang(word), targetLang(word))
     ttsManager.speakSegments(
       segments,
       () => { setPlayingWordId(null); setPlayingPart(null) },
@@ -226,7 +285,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
     ttsManager.stop()
     setPlayingWordId(word.id)
     setPlayingPart('context')
-    const segments = segmentTextByQuotedOriginal(word.context, sourceLang(word), targetLang(word))
+    const segments = segmentTextByQuotesAndParentheses(word.context, sourceLang(word), targetLang(word))
     ttsManager.speakSegments(
       segments,
       () => { setPlayingWordId(null); setPlayingPart(null) },
@@ -269,10 +328,13 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="notion-panel w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col overflow-hidden"
+        className="notion-panel w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden"
         style={{
           padding: 0,
-          borderRadius: '16px', // 豆包风格：更大的圆角
+          // 统一在不同站点/语言下的宽度表现：不使用 rem，固定到与英语页面等效的像素
+          maxWidth: 'min(896px, 95vw)', // 56rem @ 16px = 896px
+          maxHeight: '90vh',
+          borderRadius: '16px',
           background: 'rgba(255, 255, 255, 0.98)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
@@ -367,7 +429,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
               className="notion-btn-primary px-3 py-2 text-sm font-medium flex items-center gap-2"
             >
               <Play className="w-4 h-4" strokeWidth={2} />
-              学习模式
+              闪卡学习
             </button>
           </div>
         </div>
@@ -422,6 +484,14 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
                   style={{
                     borderColor: selectedIds.has(word.id) ? 'var(--notion-accent)' : undefined
                   }}
+                  ref={(el) => {
+                    if (el) {
+                      itemRefs.current.set(word.id, el)
+                    } else {
+                      itemRefs.current.delete(word.id)
+                    }
+                  }}
+                  data-word-id={word.id}
                 >
                   <div className="flex items-start gap-3">
                     <input
@@ -543,7 +613,7 @@ function WordbookPanel({ isOpen, onClose }: WordbookPanelProps) {
                         </div>
                       )}
                       <div className="mt-2 text-xs" style={{ color: 'var(--notion-text-tertiary)' }}>
-                        {new Date(word.createdAt).toLocaleString('zh-CN')} · 查看 {word.viewCount} 次
+                        {new Date(word.createdAt).toLocaleString('zh-CN')} · 查看 {viewCountOverrides[word.id] ?? word.viewCount} 次
                       </div>
                     </div>
                   </div>

@@ -11,7 +11,6 @@
 
 import {
   QWEN_API_BASE_URL,
-  QWEN_API_KEY,
   QWEN_MODEL,
   API_CONFIG,
   getApiUrl,
@@ -614,27 +613,15 @@ export async function enhanceTranslationWithConfig(
 /**
  * 调用通义千问 API 进行翻译（保留：兼容 .env 或未配置多服务商时的默认行为）
  */
+/** 已废弃：请通过 popup 设置填入 API Key，使用 handleTranslateRequest 流程 */
 export async function translateText(
-  text: string,
-  sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es' = 'en',
-  retries: number = 2
+  _text: string,
+  _sourceLang: 'en' | 'de' | 'fr' | 'ja' | 'es' = 'en',
+  _retries: number = 2
 ): Promise<TranslationResponse> {
-  if (!QWEN_API_KEY) {
-    throw new QwenApiError(
-      '未配置 API Key。请点击扩展图标，在设置中选择服务商并填写 API Key。',
-      'MISSING_API_KEY'
-    )
-  }
-  return translateTextWithConfig(
-    {
-      baseUrl: QWEN_API_BASE_URL,
-      apiKey: QWEN_API_KEY,
-      model: QWEN_MODEL
-    },
-    text,
-    sourceLang,
-    'zh', // 默认目标语言为中文
-    retries
+  throw new QwenApiError(
+    '未配置 API Key。请点击扩展图标，在设置中选择服务商并填写 API Key。',
+    'MISSING_API_KEY'
   )
 }
 

@@ -12,7 +12,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Volume2, VolumeX, Loader2, X, Minus, Maximize2, Minimize2, ExternalLink } from 'lucide-react'
-import { ttsManager, detectLanguage, segmentTextByQuotedOriginal, LANGUAGE_CONFIGS, type SupportedLanguage } from '../../utils/tts'
+import { ttsManager, detectLanguage, segmentTextByQuotedOriginal, segmentTextByLanguage, segmentTextByQuotesAndParentheses, LANGUAGE_CONFIGS, type SupportedLanguage, type TTSSegment } from '../../utils/tts'
 
 /**
  * 翻译结果数据结构
@@ -37,6 +37,8 @@ export interface TranslationResult {
   isPartial?: boolean
   /** 保存时的源语言，供生词本朗读时使用，避免 detectLanguage(originalText) 误判 */
   sourceLanguage?: SourceLangCode
+  /** 目标语言：用于朗读翻译时避免误判（直接用真实目标语） */
+  targetLanguage?: SourceLangCode
 }
 
 /** 翻译 API 支持的源语言（不含中文） */
@@ -238,10 +240,26 @@ const PANEL_MARGIN = 16
 const MIN_PANEL_WIDTH = 320
 const MIN_PANEL_HEIGHT = 280
 const RESIZE_HANDLE_WIDTH = 6
+/** 绝对上限：防止界面异常放大，任何情况下不超过视口比例 */
+const ABSOLUTE_MAX_PANEL_WIDTH = 900
+const ABSOLUTE_MAX_PANEL_HEIGHT_RATIO = 0.9
 /** 字体统一（与图二英语场景一致）：主内容 15px、标签 12px、正文/次要 13px */
 const FONT_MAIN_PX = 15
 const FONT_LABEL_PX = 12
 const FONT_BODY_PX = 13
+
+/** 复刻参考图右侧面板配色：纯白底、深灰字、浅灰边框与背景 */
+const PANEL_TEXT = '#333333'
+const PANEL_TEXT_SECONDARY = '#666666'
+const PANEL_TEXT_TERTIARY = '#888888'
+const PANEL_BORDER = 'rgba(0,0,0,0.08)'
+const PANEL_BORDER_LIGHT = 'rgba(0,0,0,0.06)'
+const PANEL_BG_SUBTLE = '#FAFAFA'
+const PANEL_BTN_BG = '#F2F2F2'
+const PANEL_ACCENT = '#555555'
+const PANEL_ERROR = '#c62828'
+/** 内容区统一页边距（与参考图一致） */
+const PANEL_CONTENT_PADDING = 20
 
 function TranslationPanel({
   anchorPosition = null,
@@ -270,6 +288,12 @@ function TranslationPanel({
   // 显示用的语言：优先用外部传入的 sourceLanguage，否则本地检测
   const [detectedLang, setDetectedLang] = useState<SupportedLanguage>('en')
 
+  // 预先解析好的「上下文语境」分段，供渲染 + 语音复用，确保「听到的内容」与「看到的内容」一致
+  const contextBlocks = React.useMemo(
+    () => (result?.context ? parseNumberedBlocks(result.context) : []),
+    [result?.context]
+  )
+
   const [draggedPosition, setDraggedPosition] = useState<{ top?: number; left?: number; bottom?: number } | null>(null)
   const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null)
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startLeft: 0, startTop: 0 })
@@ -286,7 +310,7 @@ function TranslationPanel({
   useEffect(() => {
     // 拖动状态管理
     let isDraggingActive = false // 标记是否正在拖动过程中
-    let headerElement: HTMLElement | null = null
+    let currentHandleEl: HTMLElement | null = null // 当前实际的拖动手柄元素（标题栏或边缘手柄）
     let wasDragging = false // 标记是否真正拖动过
     let rafId: number | null = null // requestAnimationFrame ID
     let currentMouseX = 0 // 当前鼠标 X 坐标（用于 RAF）
@@ -358,12 +382,12 @@ function TranslationPanel({
         dragRef.current.isDragging = true
         wasDragging = true
         
-        // 开始拖动时，只在标题栏区域阻止文本选择
+        // 开始拖动时，只在拖动手柄区域阻止文本选择
         // 不阻止整个 body，避免影响内容区域的文字选择
-        if (headerElement) {
-          headerElement.style.userSelect = 'none'
-          headerElement.style.webkitUserSelect = 'none'
-          headerElement.style.cursor = 'grabbing'
+        if (currentHandleEl) {
+          currentHandleEl.style.userSelect = 'none'
+          currentHandleEl.style.webkitUserSelect = 'none'
+          currentHandleEl.style.cursor = 'grabbing'
         }
         
         // 关键：不在拖动时设置整个面板的 userSelect: 'none'
@@ -410,11 +434,11 @@ function TranslationPanel({
         isRafRunning = false
       }
       
-      // 恢复文本选择：恢复标题栏和面板的 userSelect
-      if (headerElement) {
-        headerElement.style.userSelect = 'none' // 标题栏保持不可选中
-        headerElement.style.webkitUserSelect = 'none'
-        headerElement.style.cursor = 'grab'
+      // 恢复文本选择：恢复手柄和面板的 userSelect
+      if (currentHandleEl) {
+        currentHandleEl.style.userSelect = 'none' // 手柄保持不可选中
+        currentHandleEl.style.webkitUserSelect = 'none'
+        currentHandleEl.style.cursor = 'grab'
       }
       
       // 恢复内容区域的文字选择能力
@@ -463,13 +487,14 @@ function TranslationPanel({
       currentMouseY = 0
     }
     
-    // mousedown 事件处理：仅当按下点在「标题栏」内时才启动拖动，内容区按下不启动（实现 Cursor 式：内容区可自由选字）
+    // mousedown 事件处理：仅当按下点在「拖动手柄」内时才启动拖动，内容区按下不启动（实现 Cursor 式：内容区可自由选字）
     const handleMouseDown = (e: MouseEvent) => {
       if (!panelRef.current) return
       const target = e.target as HTMLElement
       if (target.closest('button')) return
-      const dragHandleEl = panelRef.current.querySelector('[data-drag-handle]') as HTMLElement
-      if (!dragHandleEl || !dragHandleEl.contains(target)) return
+      const dragHandleEl = target.closest('[data-drag-handle]') as HTMLElement | null
+      if (!dragHandleEl) return
+      currentHandleEl = dragHandleEl
       e.preventDefault()
       e.stopPropagation()
       e.stopImmediatePropagation()
@@ -496,11 +521,11 @@ function TranslationPanel({
         startTop: currentTop
       }
       
-      // 只在标题栏区域阻止文本选择，不影响内容区域
-      if (headerElement) {
-        headerElement.style.userSelect = 'none'
-        headerElement.style.webkitUserSelect = 'none'
-        headerElement.style.cursor = 'grab'
+      // 只在拖动手柄区域阻止文本选择，不影响内容区域
+      if (currentHandleEl) {
+        currentHandleEl.style.userSelect = 'none'
+        currentHandleEl.style.webkitUserSelect = 'none'
+        currentHandleEl.style.cursor = 'grab'
       }
       
       // 返回 false 确保事件被完全处理
@@ -510,11 +535,8 @@ function TranslationPanel({
     // 绑定事件监听器：使用 requestAnimationFrame 确保 DOM 已渲染
     const bindEvents = () => {
       if (panelRef.current) {
-        headerElement = panelRef.current.querySelector('[data-drag-handle]') as HTMLElement
-        if (headerElement) {
-          headerElement.addEventListener('mousedown', handleMouseDown, { capture: true, passive: false })
-          headerElement.style.cursor = 'grab'
-        }
+        // 在面板根节点捕获 mousedown，内部只在 data-drag-handle 上生效
+        panelRef.current.addEventListener('mousedown', handleMouseDown, { capture: true, passive: false })
       }
     }
     
@@ -535,18 +557,17 @@ function TranslationPanel({
       }
       
       // 清理：移除事件监听器
-      if (headerElement) {
-        headerElement.removeEventListener('mousedown', handleMouseDown, { capture: true } as EventListenerOptions)
-        headerElement.style.cursor = ''
+      if (panelRef.current) {
+        panelRef.current.removeEventListener('mousedown', handleMouseDown, { capture: true } as EventListenerOptions)
       }
       window.removeEventListener('mousemove', onMouseMove, { capture: true } as EventListenerOptions)
       window.removeEventListener('mouseup', onMouseUp, { capture: true } as EventListenerOptions)
       
       // 清理：恢复文本选择能力
-      if (headerElement) {
-        headerElement.style.userSelect = ''
-        headerElement.style.webkitUserSelect = ''
-        headerElement.style.cursor = ''
+      if (currentHandleEl) {
+        currentHandleEl.style.userSelect = ''
+        currentHandleEl.style.webkitUserSelect = ''
+        currentHandleEl.style.cursor = ''
       }
       // 不设置面板根元素的 userSelect，让内容区域自己的样式生效
       if (panelRef.current) {
@@ -561,8 +582,8 @@ function TranslationPanel({
   useEffect(() => {
     const panel = panelRef.current
     if (!panel) return
-    const maxW = () => Math.min(window.innerWidth - PANEL_MARGIN * 2, 900)
-    const maxH = () => Math.min(window.innerHeight - PANEL_MARGIN * 2, 0.9 * window.innerHeight)
+    const maxW = () => Math.min(window.innerWidth - PANEL_MARGIN * 2, ABSOLUTE_MAX_PANEL_WIDTH)
+    const maxH = () => Math.min(window.innerHeight - PANEL_MARGIN * 2, window.innerHeight * ABSOLUTE_MAX_PANEL_HEIGHT_RATIO)
     const clampSize = (w: number, h: number) => ({
       width: Math.max(MIN_PANEL_WIDTH, Math.min(maxW(), w)),
       height: Math.max(MIN_PANEL_HEIGHT, Math.min(maxH(), h))
@@ -595,7 +616,13 @@ function TranslationPanel({
       if (!resizeRef.current.active) return
       const rect = panelRef.current?.getBoundingClientRect()
       if (rect && panelRef.current) {
-        const { width, height } = clampSize(rect.width, rect.height)
+        let w = rect.width
+        let h = rect.height
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+          w = PANEL_WIDTH
+          h = Math.min(PANEL_MAX_HEIGHT, maxH())
+        }
+        const { width, height } = clampSize(w, h)
         setPanelSize({ width, height })
       }
       resizeRef.current.active = false
@@ -713,9 +740,8 @@ function TranslationPanel({
       return
     }
     
-    // 检测翻译结果的语言（这就是目标语言）
-    // 例如：英语翻译成德语，翻译结果就是德语，应该用德语语音播放
-    const translationLang = detectLanguage(result.translation)
+    // 翻译后的目标语言：优先使用结果自带的 targetLanguage，避免自动检测误判
+    const translationLang: SupportedLanguage = (result.targetLanguage as SupportedLanguage) ?? detectLanguage(result.translation)
     
     // 直接使用检测到的翻译结果语言来播放语音
     // 这样无论翻译成什么语言，都能用正确的语音播放
@@ -778,10 +804,13 @@ function TranslationPanel({
       return
     }
     const sourceLang = langForSpeak
-    const targetLang: SupportedLanguage = result.translation
-      ? detectLanguage(result.translation)
-      : detectLanguage(result.grammar)
-    const segments = segmentTextByQuotedOriginal(result.grammar, sourceLang, targetLang)
+    const targetLang: SupportedLanguage =
+      (result.targetLanguage as SupportedLanguage) ??
+      (result.translation ? detectLanguage(result.translation) : detectLanguage(result.grammar))
+    // 去除可能的前缀标签（如“语法点拨：”“语法：”），避免把前导中文符号读出来
+    const grammarText = result.grammar.replace(/^\s*(关键)?语法点拨[:：]\s*/,'').replace(/^\s*语法[:：]\s*/, '')
+    // 通用切分：支持「」/引号/圆括号，括注多为译注（偏向目标语），正文偏向源语
+    const segments = segmentTextByQuotesAndParentheses(grammarText, sourceLang, targetLang)
     setIsPlayingGrammar(true)
     ttsManager.speakSegments(
       segments,
@@ -797,6 +826,8 @@ function TranslationPanel({
   /**
    * 播放上下文语境语音。
    * 与语法点拨一致：「」内用源语言读，「」外用目标语言读。
+   * 但为了和界面保持一致，这里使用已经解析好的中文内容（contextBlocks），
+   * 避免原始 context 中的原文+解释混杂导致「看到的是中文解释，听到却掺杂原文」的错位体验。
    */
   const handleSpeakContext = () => {
     if (!result?.context) return
@@ -808,11 +839,17 @@ function TranslationPanel({
       setIsPlayingContext(false)
       return
     }
-    const sourceLang = langForSpeak
-    const targetLang: SupportedLanguage = result.translation
-      ? detectLanguage(result.translation)
-      : detectLanguage(result.context)
-    const segments = segmentTextByQuotedOriginal(result.context, sourceLang, targetLang)
+    // 将界面上展示的每一条 context 文本（纯中文解释/示例句）拼接成一段文本再朗读，
+    // 这样无论是英语还是日语翻译成中文，听到的内容都与界面上看到的中文一致。
+    const visibleContextText = contextBlocks.length
+      ? contextBlocks.map((b) => b.content).join('\n')
+      : result.context
+
+    const targetLang: SupportedLanguage = detectLanguage(visibleContextText)
+    const segments: TTSSegment[] = segmentTextByLanguage(visibleContextText).map((seg) => ({
+      text: seg.text,
+      lang: targetLang
+    }))
     setIsPlayingContext(true)
     ttsManager.speakSegments(
       segments,
@@ -880,13 +917,27 @@ function TranslationPanel({
     }
   }
 
-  const maxPanelWidth = () => Math.min(window.innerWidth - PANEL_MARGIN * 2, 900)
-  const maxPanelHeight = () => Math.min(window.innerHeight - PANEL_MARGIN * 2, Math.round(0.9 * window.innerHeight))
-  const effectiveWidth = panelSize
-    ? Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth(), panelSize.width))
+  const maxPanelWidth = () => Math.min(window.innerWidth - PANEL_MARGIN * 2, ABSOLUTE_MAX_PANEL_WIDTH)
+  const maxPanelHeight = () => Math.min(window.innerHeight - PANEL_MARGIN * 2, Math.round(window.innerHeight * ABSOLUTE_MAX_PANEL_HEIGHT_RATIO))
+
+  /** 校验 panelSize：若为非法或超出安全范围则视为未设置，避免界面异常放大 */
+  const sanitizedPanelSize = (() => {
+    if (!panelSize) return null
+    const w = Number(panelSize.width)
+    const h = Number(panelSize.height)
+    if (!Number.isFinite(w) || !Number.isFinite(h)) return null
+    if (w < MIN_PANEL_WIDTH || h < MIN_PANEL_HEIGHT) return null
+    const maxW = maxPanelWidth()
+    const maxH = maxPanelHeight()
+    if (w > maxW || h > maxH) return { width: Math.min(w, maxW), height: Math.min(h, maxH) }
+    return panelSize
+  })()
+
+  const effectiveWidth = sanitizedPanelSize
+    ? Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth(), sanitizedPanelSize.width))
     : PANEL_WIDTH
-  const effectiveHeight = panelSize
-    ? Math.max(MIN_PANEL_HEIGHT, Math.min(maxPanelHeight(), panelSize.height))
+  const effectiveHeight = sanitizedPanelSize
+    ? Math.max(MIN_PANEL_HEIGHT, Math.min(maxPanelHeight(), sanitizedPanelSize.height))
     : undefined
 
   const panelStyle = draggedPosition
@@ -904,7 +955,7 @@ function TranslationPanel({
           animation: draggedPosition.left && draggedPosition.top ? 'none' : 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)', // 拖动后禁用动画，避免闪烁
           pointerEvents: 'auto',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--notion-border-strong) transparent',
+          scrollbarColor: 'rgba(0,0,0,0.2) transparent',
           transform: 'none', // 拖动结束后使用 left/top，拖动过程中由 RAF 直接操作 transform
           willChange: 'transform', // 提示浏览器优化 transform（拖动时使用）
           transition: 'none' // 拖动时禁用过渡动画，提升性能
@@ -924,7 +975,7 @@ function TranslationPanel({
           animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           pointerEvents: 'auto',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--notion-border-strong) transparent'
+          scrollbarColor: 'rgba(0,0,0,0.2) transparent'
         }
         if (anchorPosition.top != null) {
           base.top = Math.min(anchorPosition.top, window.innerHeight - 200)
@@ -951,26 +1002,26 @@ function TranslationPanel({
           animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           pointerEvents: 'auto',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--notion-border-strong) transparent'
+          scrollbarColor: 'rgba(0,0,0,0.2) transparent'
         }
         return base
       })()
 
-  // 豆包风格：面板直接浮在页面上，没有全屏遮罩层
-  // 面板使用 position: fixed 和合适的 z-index，背景网页保持完全可见
+  // 视觉风格：复刻参考图右侧面板 - 纯白底、浅灰边框、充足页边距（24px 等）、圆角 12px
   return (
     <div
       ref={panelRef}
       id="translation-panel-root"
-      className="notion-panel"
+      className="translation-panel"
       style={{
         ...panelStyle,
-        borderRadius: '16px',
-        background: 'rgba(255, 242, 248, 0.98)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        boxShadow: '0 6px 24px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
-        border: '1px solid rgba(220, 190, 200, 0.35)',
+        // 架构安全网：无论 state 如何，面板尺寸绝不超过视口，防止界面异常放大
+        maxWidth: 'min(900px, 95vw)',
+        maxHeight: '85vh',
+        borderRadius: '12px',
+        background: '#FFFFFF',
+        boxShadow: '0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04)',
+        border: `1px solid ${PANEL_BORDER}`,
         zIndex: 1000001, // 确保面板在页面内容之上，但不在单独的遮罩层
         pointerEvents: 'auto',
         // 移除 userSelect: 'none'，允许内容区域选中文字
@@ -995,32 +1046,83 @@ function TranslationPanel({
         }
       }}
     >
-        {/* 头部：Cursor 风格 - macOS 窗口控制按钮 + 标题 + 加入生词本（可拖动，固定在顶部） */}
-        <div 
-          className="flex items-center flex-shrink-0" 
+        {/* 边缘拖动手柄：左右与底部 12px 区域可拖动（不遮挡内容点击） */}
+        <div
           data-drag-handle
+          aria-label="按住拖动"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 12,
+            cursor: 'grab',
+            zIndex: 11,
+            background: 'transparent',
+            pointerEvents: 'auto'
+          }}
+        />
+        <div
+          data-drag-handle
+          aria-label="按住拖动"
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 12,
+            cursor: 'grab',
+            zIndex: 11,
+            background: 'transparent',
+            pointerEvents: 'auto'
+          }}
+        />
+        <div
+          data-drag-handle
+          aria-label="按住拖动"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 12,
+            cursor: 'grab',
+            zIndex: 11,
+            background: 'transparent',
+            pointerEvents: 'auto'
+          }}
+        />
+        {/* 头部：Cursor 风格 - macOS 窗口控制按钮 + 标题 + 加入生词本（可拖动，固定在顶部）；双击标题栏恢复默认尺寸 */}
+        <div 
+          className="flex items-center flex-shrink-0 flex-nowrap" 
+          data-drag-handle
+          title="拖动移动；双击恢复默认大小"
           style={{ 
-            position: 'sticky', // 使用 sticky 定位，固定在顶部
-            top: 0, // 固定在顶部
-            zIndex: 10, // 确保头部在内容之上
-            background: 'rgba(255, 238, 245, 0.95)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            marginBottom: panelMode === 'minimized' ? 0 : 16, 
-            paddingBottom: panelMode === 'minimized' ? 0 : 12, 
-            borderBottom: panelMode === 'minimized' ? 'none' : '1px solid rgba(220, 190, 200, 0.3)',
-            paddingLeft: panelMode === 'minimized' ? '12px' : '16px',
-            paddingRight: panelMode === 'minimized' ? '12px' : '16px',
-            paddingTop: panelMode === 'minimized' ? '8px' : '10px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            background: '#FFFFFF',
+            marginBottom: panelMode === 'minimized' ? 0 : 20, 
+            paddingBottom: panelMode === 'minimized' ? 0 : 14, 
+            borderBottom: panelMode === 'minimized' ? 'none' : `1px solid ${PANEL_BORDER_LIGHT}`,
+            paddingLeft: panelMode === 'minimized' ? 14 : PANEL_CONTENT_PADDING,
+            paddingRight: panelMode === 'minimized' ? 14 : PANEL_CONTENT_PADDING,
+            paddingTop: panelMode === 'minimized' ? 10 : 14,
             cursor: 'default',
             userSelect: 'none',
             WebkitUserSelect: 'none',
-            borderRadius: '16px 16px 0 0'
+            borderRadius: '12px 12px 0 0',
+            gap: 12
           }}
-          // 移除 React 事件处理，完全使用原生事件监听器
+          onDoubleClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setPanelSize(null)
+            setPanelMode('normal')
+          }}
         >
-          {/* macOS 风格的窗口控制按钮（Traffic Lights）- 左对齐 */}
-          <div className="flex items-center gap-2 mr-3" style={{ flexShrink: 0 }}>
+          {/* macOS 风格的窗口控制按钮（Traffic Lights）- 左对齐，不参与伸缩 */}
+          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
             {/* 红色关闭按钮 */}
             <button
               onClick={onClose}
@@ -1091,50 +1193,59 @@ function TranslationPanel({
             )}
           </div>
           
-          {/* 标题 */}
-          <h2 className="font-medium" style={{ color: 'rgba(0, 0, 0, 0.75)', letterSpacing: '-0.01em', flex: 1, fontSize: FONT_LABEL_PX + 'px' }}>
+          {/* 标题：占据中间剩余空间并居中，minWidth:0 防止挤压右侧按钮 */}
+          <h2 
+            className="font-medium" 
+            style={{ 
+              color: PANEL_TEXT, 
+              letterSpacing: '-0.01em', 
+              flex: 1, 
+              minWidth: 0, 
+              fontSize: FONT_LABEL_PX + 'px',
+              textAlign: 'center'
+            }}
+          >
             翻译结果
           </h2>
           
-          {/* 加入生词本按钮（移到顶部右侧，Cursor 风格 - 更和谐的设计） */}
+          {/* 加入生词本按钮：右侧固定宽度不伸缩，与标题垂直居中对齐 */}
           {panelMode !== 'minimized' && result && onSave && (
             <button
               onClick={handleSave}
               disabled={saveSuccess}
               className="px-2.5 py-1 font-medium disabled:opacity-60 disabled:cursor-not-allowed rounded transition-all flex items-center justify-center gap-1.5"
               style={{
+                flexShrink: 0,
                 fontSize: FONT_BODY_PX + 'px',
                 background: saveSuccess 
-                  ? 'rgba(31, 184, 50, 0.15)'
-                  : 'rgba(240, 200, 215, 0.5)',
-                color: saveSuccess 
-                  ? '#1fb832'
-                  : 'rgba(0, 0, 0, 0.75)',
+                  ? 'rgba(82, 196, 26, 0.12)'
+                  : '#F2F2F2',
+                color: saveSuccess
+                  ? '#333333'
+                  : '#4A4A4A',
                 border: saveSuccess 
-                  ? '1px solid rgba(31, 184, 50, 0.3)'
-                  : '1px solid rgba(220, 180, 195, 0.5)',
+                  ? '1px solid rgba(82, 196, 26, 0.25)'
+                  : '1px solid rgba(0, 0, 0, 0.08)',
                 boxShadow: 'none',
-                letterSpacing: '-0.01em',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)'
+                letterSpacing: '-0.01em'
               }}
               onMouseEnter={(e) => {
                 if (!saveSuccess && !e.currentTarget.disabled) {
-                  e.currentTarget.style.background = 'rgba(235, 185, 205, 0.6)'
-                  e.currentTarget.style.borderColor = 'rgba(220, 180, 195, 0.7)'
-                  e.currentTarget.style.color = 'rgba(0, 0, 0, 0.85)'
+                  e.currentTarget.style.background = '#E8E8E8'
+                  e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.12)'
+                  e.currentTarget.style.color = '#333333'
                 }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = saveSuccess 
-                  ? 'rgba(31, 184, 50, 0.15)' 
-                  : 'rgba(240, 200, 215, 0.5)'
+                  ? 'rgba(82, 196, 26, 0.12)' 
+                  : '#F2F2F2'
                 e.currentTarget.style.borderColor = saveSuccess 
-                  ? 'rgba(31, 184, 50, 0.3)'
-                  : 'rgba(220, 180, 195, 0.5)'
-                e.currentTarget.style.color = saveSuccess 
-                  ? '#1fb832'
-                  : 'rgba(0, 0, 0, 0.75)'
+                  ? 'rgba(82, 196, 26, 0.25)'
+                  : 'rgba(0, 0, 0, 0.08)'
+                e.currentTarget.style.color = saveSuccess
+                  ? '#333333'
+                  : '#4A4A4A'
               }}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -1165,9 +1276,10 @@ function TranslationPanel({
             overflowY: 'auto', // 允许垂直滚动
             overflowX: 'hidden', // 禁止水平滚动
             minHeight: 0, // 确保 flex 子元素可以缩小
-            paddingLeft: panelMode === 'minimized' ? '16px' : '20px', // 与面板 padding 对齐
-            paddingRight: panelMode === 'minimized' ? '16px' : '20px', // 与面板 padding 对齐
-            paddingBottom: panelMode === 'minimized' ? '12px' : '18px', // 与面板 padding 对齐
+            paddingLeft: panelMode === 'minimized' ? 16 : PANEL_CONTENT_PADDING,
+            paddingRight: panelMode === 'minimized' ? 16 : PANEL_CONTENT_PADDING,
+            paddingTop: panelMode === 'minimized' ? 12 : PANEL_CONTENT_PADDING,
+            paddingBottom: panelMode === 'minimized' ? 12 : PANEL_CONTENT_PADDING,
             userSelect: 'text', // 允许文字选中
             WebkitUserSelect: 'text',
             MozUserSelect: 'text',
@@ -1182,28 +1294,28 @@ function TranslationPanel({
         >
         {panelMode !== 'minimized' && (
         <>
-        {/* 原文区块 */}
-        <div className="notion-card mb-3 p-3">
+        {/* 原文区块 - 参考右图：白底、浅灰边框、充足留白 */}
+        <div className="mb-4 p-4" style={{ background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}`, borderRadius: 10 }}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <p className="font-medium mb-1.5 uppercase tracking-wide" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
+              <p className="font-medium mb-1.5 uppercase tracking-wide" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_LABEL_PX + 'px' }}>
                 选中的文字
               </p>
-              <p className="font-medium mb-1 leading-relaxed break-words whitespace-pre-wrap" style={{ color: 'var(--notion-text)', wordBreak: 'break-word', overflowWrap: 'anywhere', fontSize: FONT_MAIN_PX + 'px' }}>
+              <p className="font-medium mb-1 leading-relaxed break-words whitespace-pre-wrap" style={{ color: PANEL_TEXT, wordBreak: 'break-word', overflowWrap: 'anywhere', fontSize: FONT_MAIN_PX + 'px' }}>
                 {text}
               </p>
               {/* 调试信息：显示文本长度和预览 */}
               {process.env.NODE_ENV === 'development' && (
-                <p className="mt-1 opacity-50" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
+                <p className="mt-1 opacity-50" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
                   调试: 文本长度 {text.length}, 预览: {text.substring(0, 50)}...
                 </p>
               )}
               {result?.phonetic && (
-                <p className="mt-0.5 mb-1.5 font-mono" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
+                <p className="mt-0.5 mb-1.5 font-mono" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
                   /{result.phonetic}/
                 </p>
               )}
-              <p className="mt-1.5" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
+              <p className="mt-1.5" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
                 {sourceLanguage != null ? '翻译自：' + SOURCE_LANG_LABELS[sourceLanguage] : '检测语言：' + (
                   detectedLang === 'en' ? '英语' :
                   detectedLang === 'de' ? '德语' :
@@ -1214,16 +1326,16 @@ function TranslationPanel({
               </p>
               {onRetranslateWithLang && result && !isLoading && (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>识别错了？</span>
+                  <span style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>识别错了？</span>
                   <select
                     value={retranslateLang}
                     onChange={(e) => setRetranslateLang(e.target.value as SourceLangCode)}
                     className="rounded px-2 py-1 outline-none cursor-pointer"
                     style={{
                       fontSize: FONT_BODY_PX + 'px',
-                      background: 'var(--notion-bg)',
-                      color: 'var(--notion-text)',
-                      border: '1px solid var(--notion-border-strong)'
+                      background: '#FFFFFF',
+                      color: PANEL_TEXT,
+                      border: `1px solid ${PANEL_BORDER}`
                     }}
                     aria-label="选择语言重新翻译"
                   >
@@ -1237,18 +1349,19 @@ function TranslationPanel({
                     className="px-3 py-1.5 font-medium rounded-lg transition-all"
                     style={{
                       fontSize: FONT_BODY_PX + 'px',
-                      background: 'var(--notion-accent)',
+                      background: PANEL_TEXT,
                       color: '#fff',
                       border: 'none',
-                      boxShadow: '0 2px 6px rgba(24, 144, 255, 0.25)'
+                      borderRadius: 8,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-1px)'
-                      e.currentTarget.style.boxShadow = '0 4px 10px rgba(24, 144, 255, 0.35)'
+                      e.currentTarget.style.background = '#222222'
+                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)'
-                      e.currentTarget.style.boxShadow = '0 2px 6px rgba(24, 144, 255, 0.25)'
+                      e.currentTarget.style.background = PANEL_TEXT
+                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)'
                     }}
                   >
                     按此语言重新翻译
@@ -1261,7 +1374,7 @@ function TranslationPanel({
               onClick={isPlayingOriginal ? handleStopOriginal : handleSpeakOriginal}
               className="ml-3 w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 transition-colors"
               style={{
-                background: isPlayingOriginal ? 'var(--notion-error)' : 'var(--notion-accent)',
+                background: isPlayingOriginal ? PANEL_ERROR : PANEL_TEXT,
                 color: '#fff'
               }}
               aria-label={isPlayingOriginal ? '停止播放' : '播放原文语音'}
@@ -1279,8 +1392,8 @@ function TranslationPanel({
         {/* 加载状态 */}
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-10">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--notion-accent)' }} strokeWidth={2} />
-            <span className="mt-3" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: PANEL_TEXT_TERTIARY }} strokeWidth={2} />
+            <span className="mt-3" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
               正在翻译...
             </span>
           </div>
@@ -1288,22 +1401,22 @@ function TranslationPanel({
 
         {/* 错误状态 */}
         {error && !isLoading && (
-          <div className="notion-card p-4 border-l-4" style={{ borderLeftColor: 'var(--notion-error)' }}>
+          <div className="p-4" style={{ background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}`, borderRadius: 10, borderLeft: `4px solid ${PANEL_ERROR}` }}>
             <div className="flex items-start gap-2">
-              <span style={{ color: 'var(--notion-error)', fontSize: FONT_BODY_PX + 'px' }}>⚠️</span>
+              <span style={{ color: PANEL_ERROR, fontSize: FONT_BODY_PX + 'px' }}>⚠️</span>
               <div className="flex-1">
-                <h3 className="font-medium mb-1" style={{ color: 'var(--notion-text)', fontSize: FONT_LABEL_PX + 'px' }}>
+                <h3 className="font-medium mb-1" style={{ color: PANEL_TEXT, fontSize: FONT_LABEL_PX + 'px' }}>
                   翻译失败
                 </h3>
-                <p className="leading-relaxed" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_BODY_PX + 'px' }}>{error}</p>
+                <p className="leading-relaxed" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_BODY_PX + 'px' }}>{error}</p>
                 {error.includes('API Key') && (
-                  <p className="mt-2" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
-                    请在 .env 中设置 VITE_QWEN_API_KEY
+                  <p className="mt-2" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
+                    请在扩展设置中填入 API Key
                   </p>
                 )}
                 {error.includes('Extension context invalidated') && (
-                  <div className="mt-2 space-y-1" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_BODY_PX + 'px' }}>
-                    <p>可尝试：刷新页面，或到 chrome://extensions/ 重新加载插件。</p>
+                  <div className="mt-2 space-y-1" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_BODY_PX + 'px' }}>
+                    <p>可尝试：刷新页面，或到扩展管理页重新加载插件。</p>
                   </div>
                 )}
               </div>
@@ -1311,16 +1424,19 @@ function TranslationPanel({
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => window.location.reload()}
-                className="notion-btn-primary px-3 py-1.5"
-                style={{ fontSize: FONT_BODY_PX + 'px' }}
+                className="px-3 py-1.5 font-medium rounded-lg"
+                style={{ fontSize: FONT_BODY_PX + 'px', background: PANEL_TEXT, color: '#fff', border: 'none' }}
               >
                 刷新页面
               </button>
               {error.includes('Extension context invalidated') && (
                 <button
-                  onClick={() => chrome.runtime.sendMessage({ type: 'OPEN_EXTENSIONS_PAGE' }).catch(() => window.open('chrome://extensions/', '_blank'))}
-                  className="notion-btn-secondary px-3 py-1.5"
-                  style={{ fontSize: FONT_BODY_PX + 'px' }}
+                  onClick={() => {
+                    const url = /Firefox/i.test(navigator.userAgent) ? 'about:addons' : (typeof chrome !== 'undefined' && chrome?.runtime?.id ? `chrome://extensions/?id=${chrome.runtime.id}` : 'chrome://extensions/')
+                    ;(typeof chrome !== 'undefined' && chrome?.tabs?.create) ? chrome.tabs.create({ url }).catch(() => window.open(url, '_blank')) : window.open(url, '_blank')
+                  }}
+                  className="px-3 py-1.5 font-medium rounded-lg"
+                  style={{ fontSize: FONT_BODY_PX + 'px', background: PANEL_BTN_BG, color: PANEL_TEXT, border: `1px solid ${PANEL_BORDER}` }}
                 >
                   重新加载插件
                 </button>
@@ -1331,34 +1447,25 @@ function TranslationPanel({
 
         {/* 翻译结果区域 */}
         {result && !isLoading && (
-          <div className="space-y-3">
-            <div className="notion-divider" />
-            {/* 翻译（豆包风格：更柔和的卡片） */}
-            <div className="notion-card p-4" style={{ borderRadius: '12px', background: 'rgba(255, 248, 252, 0.7)' }}>
+          <div className="space-y-4">
+            <div style={{ height: 1, background: PANEL_BORDER_LIGHT, margin: `${PANEL_CONTENT_PADDING}px 0` }} />
+            {/* 翻译 - 浅灰卡片 */}
+            <div className="p-4" style={{ borderRadius: 10, background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}` }}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <p className="font-medium mb-1.5 uppercase tracking-wide" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
+                  <p className="font-medium mb-1.5 uppercase tracking-wide" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_LABEL_PX + 'px' }}>
                     翻译
                   </p>
-                  <p className="font-medium mb-1.5 leading-relaxed break-words whitespace-pre-wrap" style={{ color: 'var(--notion-text)', wordBreak: 'break-word', overflowWrap: 'anywhere', fontSize: FONT_MAIN_PX + 'px' }}>
+                  <p className="font-medium mb-1.5 leading-relaxed break-words whitespace-pre-wrap" style={{ color: PANEL_TEXT, wordBreak: 'break-word', overflowWrap: 'anywhere', fontSize: FONT_MAIN_PX + 'px' }}>
                     {result.translation}
                   </p>
-                  {result.pronunciation && (
-                    <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--notion-border)' }}>
-                      <p className="font-medium mb-1" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
-                        Pronunciation Guide
-                      </p>
-                      <p className="font-mono leading-relaxed" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
-                        {result.pronunciation}
-                      </p>
-                    </div>
-                  )}
+                  {/* 去除 Pronunciation Guide：跨语种互译无需显示该区块 */}
                 </div>
                 <button
                   onClick={isPlayingTranslation ? handleStopTranslation : handleSpeakTranslation}
                   className="ml-3 w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 transition-colors"
                   style={{
-                    background: isPlayingTranslation ? 'var(--notion-error)' : 'var(--notion-accent)',
+                    background: isPlayingTranslation ? PANEL_ERROR : PANEL_TEXT,
                     color: '#fff'
                   }}
                   aria-label={isPlayingTranslation ? '停止播放' : '播放翻译语音'}
@@ -1375,8 +1482,8 @@ function TranslationPanel({
 
             {/* Stanford 哲学百科 (SEP)：哲学术语时显示词条链接，并始终提供站内搜索入口 */}
             {(result.sepLink || text?.trim()) && (
-              <div className="notion-card p-3" style={{ borderRadius: '12px', background: 'rgba(255, 248, 252, 0.5)' }}>
-                <p className="font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
+              <div className="p-3" style={{ borderRadius: 10, background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}` }}>
+                <p className="font-medium mb-2 uppercase tracking-wide" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_LABEL_PX + 'px' }}>
                   Stanford 哲学百科 (SEP)
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1388,12 +1495,12 @@ function TranslationPanel({
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
                       style={{
                         fontSize: FONT_BODY_PX + 'px',
-                        color: 'var(--notion-accent)',
-                        background: 'rgba(24, 144, 255, 0.08)',
-                        border: '1px solid rgba(24, 144, 255, 0.2)'
+                        color: PANEL_ACCENT,
+                        background: 'rgba(0, 0, 0, 0.06)',
+                        border: `1px solid ${PANEL_BORDER}`
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(24, 144, 255, 0.15)'
+                        e.currentTarget.style.background = 'rgba(24, 144, 255, 0.12)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'rgba(24, 144, 255, 0.08)'
@@ -1410,15 +1517,15 @@ function TranslationPanel({
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-medium transition-colors"
                     style={{
                       fontSize: FONT_BODY_PX + 'px',
-                      color: 'var(--notion-text-secondary)',
-                      background: 'var(--notion-bg)',
-                      border: '1px solid var(--notion-border)'
+                      color: PANEL_TEXT_SECONDARY,
+                      background: PANEL_BTN_BG,
+                      border: `1px solid ${PANEL_BORDER}`
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--notion-border)'
+                      e.currentTarget.style.background = '#E8E8E8'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--notion-bg)'
+                      e.currentTarget.style.background = PANEL_BTN_BG
                     }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" strokeWidth={2} />
@@ -1429,9 +1536,9 @@ function TranslationPanel({
             )}
 
             {(result.grammar || result.isPartial) && (
-              <div className="notion-card p-4" style={{ borderRadius: '12px', background: 'rgba(255, 248, 252, 0.7)' }}>
+              <div className="p-4" style={{ borderRadius: 10, background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}` }}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="font-medium uppercase tracking-wide" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
+                  <p className="font-medium uppercase tracking-wide" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_LABEL_PX + 'px' }}>
                     语法点拨
                   </p>
                   {result.grammar && (
@@ -1439,7 +1546,7 @@ function TranslationPanel({
                       onClick={isPlayingGrammar ? handleStopGrammar : handleSpeakGrammar}
                       className="w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 transition-colors"
                       style={{
-                        background: isPlayingGrammar ? 'var(--notion-error)' : 'var(--notion-accent)',
+                        background: isPlayingGrammar ? PANEL_ERROR : PANEL_TEXT,
                         color: '#fff'
                       }}
                       aria-label={isPlayingGrammar ? '停止播放' : '播放语法点拨语音'}
@@ -1455,7 +1562,7 @@ function TranslationPanel({
                 </div>
                 <div
                   style={{
-                    color: 'var(--notion-text)',
+                    color: PANEL_TEXT,
                     fontSize: FONT_BODY_PX + 'px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     lineHeight: 1.7,
@@ -1466,9 +1573,8 @@ function TranslationPanel({
                     parseNumberedBlocks(result.grammar).map((block, i) => (
                       <div key={i} className="mb-2.5 last:mb-0" style={{ display: 'block' }}>
                         {block.title ? (
-                          // 每一点单独一行显示，参考上下文语境的排版
                           <p className="mb-0 whitespace-pre-wrap break-words" style={{ display: 'block' }}>
-                            <span className="font-semibold" style={{ color: 'var(--notion-text-secondary)' }}>
+                            <span className="font-semibold" style={{ color: PANEL_TEXT_SECONDARY }}>
                               {block.title}
                             </span>
                             <span style={{ marginLeft: '0.25rem', display: 'inline' }}>{block.content || '\u00A0'}</span>
@@ -1479,16 +1585,16 @@ function TranslationPanel({
                       </div>
                     ))
                   ) : (
-                    <p style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>加载中…</p>
+                    <p style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>加载中…</p>
                   )}
                 </div>
               </div>
             )}
 
             {(result.context || result.isPartial) && (
-              <div className="notion-card p-4" style={{ borderRadius: '12px', background: 'rgba(255, 248, 252, 0.7)' }}>
+              <div className="p-4" style={{ borderRadius: 10, background: PANEL_BG_SUBTLE, border: `1px solid ${PANEL_BORDER_LIGHT}` }}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="font-medium uppercase tracking-wide" style={{ color: 'var(--notion-text-secondary)', fontSize: FONT_LABEL_PX + 'px' }}>
+                  <p className="font-medium uppercase tracking-wide" style={{ color: PANEL_TEXT_SECONDARY, fontSize: FONT_LABEL_PX + 'px' }}>
                     上下文语境
                   </p>
                   {result.context && (
@@ -1496,7 +1602,7 @@ function TranslationPanel({
                       onClick={isPlayingContext ? handleStopContext : handleSpeakContext}
                       className="w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 transition-colors"
                       style={{
-                        background: isPlayingContext ? 'var(--notion-error)' : 'var(--notion-accent)',
+                        background: isPlayingContext ? PANEL_ERROR : PANEL_TEXT,
                         color: '#fff'
                       }}
                       aria-label={isPlayingContext ? '停止播放' : '播放上下文语境语音'}
@@ -1512,7 +1618,7 @@ function TranslationPanel({
                 </div>
                 <div
                   style={{
-                    color: 'var(--notion-text)',
+                    color: PANEL_TEXT,
                     fontSize: FONT_BODY_PX + 'px',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
                     lineHeight: 1.7,
@@ -1523,9 +1629,8 @@ function TranslationPanel({
                     parseNumberedBlocks(result.context).map((block, i) => (
                       <div key={i} className="mb-2 last:mb-0">
                         {block.title ? (
-                          // 编号和文字在同一行显示，不换行
                           <p className="mb-0 whitespace-pre-wrap break-words">
-                            <span className="font-semibold" style={{ color: 'var(--notion-text-secondary)' }}>
+                            <span className="font-semibold" style={{ color: PANEL_TEXT_SECONDARY }}>
                               {block.title}
                             </span>
                             <span style={{ marginLeft: '0.25rem' }}>{block.content || '\u00A0'}</span>
@@ -1536,27 +1641,26 @@ function TranslationPanel({
                       </div>
                     ))
                   ) : (
-                    <p style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>加载中…</p>
+                    <p style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>加载中…</p>
                   )}
                 </div>
               </div>
             )}
 
-            {/* 保存成功：小尺寸提示，与插件淡粉风格一致，约 3 秒后自动消失，无需点击 */}
+            {/* 保存成功：浅灰风格提示，与参考图右侧面板一致 */}
             {saveSuccess && (
               <div
                 className="flex items-center gap-2 mt-3"
                 style={{
-                  padding: '6px 10px',
-                  background: 'rgba(255, 242, 248, 0.98)',
-                  borderRadius: '10px',
-                  border: '1px solid rgba(220, 190, 200, 0.35)',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                  padding: '8px 12px',
+                  background: PANEL_BG_SUBTLE,
+                  borderRadius: '8px',
+                  border: `1px solid ${PANEL_BORDER_LIGHT}`,
                   fontSize: FONT_BODY_PX + 'px',
-                  color: 'rgba(0, 0, 0, 0.75)'
+                  color: PANEL_TEXT
                 }}
               >
-                <span style={{ color: 'rgba(31, 184, 50, 0.9)', fontSize: '14px' }}>✓</span>
+                <span style={{ color: '#333333', fontSize: '14px' }}>✓</span>
                 <span className="font-medium">已保存到生词本</span>
               </div>
             )}
@@ -1564,7 +1668,7 @@ function TranslationPanel({
         )}
 
         {!result && !isLoading && (
-          <div className="text-center py-8" style={{ color: 'var(--notion-text-tertiary)', fontSize: FONT_BODY_PX + 'px' }}>
+          <div className="text-center py-8" style={{ color: PANEL_TEXT_TERTIARY, fontSize: FONT_BODY_PX + 'px' }}>
             等待翻译结果...
           </div>
         )}
@@ -1584,7 +1688,7 @@ function TranslationPanel({
                 cursor: 'ew-resize',
                 background: 'transparent'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(220, 190, 200, 0.2)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             />
             <div
@@ -1596,7 +1700,7 @@ function TranslationPanel({
                 cursor: 'ns-resize',
                 background: 'transparent'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(220, 190, 200, 0.2)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             />
             <div
@@ -1609,7 +1713,7 @@ function TranslationPanel({
                 cursor: 'nwse-resize',
                 background: 'transparent'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(220, 190, 200, 0.25)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.08)' }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             />
           </>

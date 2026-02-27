@@ -13,7 +13,9 @@
     {
       "matches": ["<all_urls>"],
       "js": ["src/content/index.tsx"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ],
   "background": {
@@ -27,8 +29,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/*.js", "content/*.css", "src/icons/toolbar-logo.png"],
+      "resources": ["content/*.js", "content/*.css", "src/icons/toolbar-logo.png", "src/icons/toolbar-avatar.png"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "context-ai-foreign-language@local",
+      "strict_min_version": "109.0"
+    }
+  }
 }

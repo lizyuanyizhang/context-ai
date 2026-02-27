@@ -194,6 +194,10 @@ export function useTextSelection(options: {
   
   // 上一次选择的文本（用于检测选择是否变化）
   const lastSelectedTextRef = useRef<string>('')
+
+  // 用户最近是否在工具栏/插件内点击（避免点击下拉按钮时选区清空导致工具栏消失）
+  const lastMouseDownOnOurUIRef = useRef<number>(0)
+  const TOOLBAR_CLICK_GRACE_MS = 400
   
   // Cursor 风格：标记是否正在拖拽选择（mousedown 到 mouseup 之间）
   // 在拖拽选择过程中，不更新按钮位置，避免窗口跟着动
@@ -532,15 +536,26 @@ const isSelectionReasonable = useCallback((range: Range): boolean => {
       if (isSelectingRef.current) {
         return
       }
+
+      // 若用户刚在工具栏/插件内点击（如展开下拉），不清空，避免工具栏闪退
+      if (Date.now() - lastMouseDownOnOurUIRef.current < TOOLBAR_CLICK_GRACE_MS) {
+        return
+      }
       
       setTimeout(() => {
         if (Date.now() - lastMouseUpTimeRef.current < 200) return
+        // 再次检查：用户是否在 grace 时间内点击了我们的 UI
+        if (Date.now() - lastMouseDownOnOurUIRef.current < TOOLBAR_CLICK_GRACE_MS) return
         const currentSelection = window.getSelection()
         if (!currentSelection || currentSelection.toString().trim().length === 0) {
           // 翻译面板打开时锁定选区，不清空，避免点击面板内导致面板消失
           if (keepSelectionWhenPanelOpen) return
-          // 若焦点仍在插件内（如翻译面板），不清空，避免面板闪退
-          if (document.activeElement?.closest('#context-ai-root')) return
+          const active = document.activeElement as HTMLElement | null
+          if (
+            active?.closest?.('#context-ai-root') ||
+            active?.closest?.('#context-ai-shadow-host') ||
+            active?.id === 'context-ai-shadow-host'
+          ) return
           setButtonPosition(null)
           setSelectedText('')
           currentRangeRef.current = null
@@ -580,9 +595,17 @@ const isSelectionReasonable = useCallback((range: Range): boolean => {
    * Cursor 风格：标记开始选择，在选择过程中不更新按钮位置
    */
   const handleMouseDown = useCallback((e: MouseEvent) => {
-    // 如果点击的是我们的组件，不处理
     const target = e.target as HTMLElement
-    if (target.closest('#context-ai-root')) {
+    const inOurUI =
+      !!target.closest('#context-ai-root') ||
+      !!target.closest('#context-ai-shadow-host') ||
+      (typeof (e as any).composedPath === 'function' &&
+        ((e as any).composedPath() as EventTarget[]).some((n) => {
+          const el = n as HTMLElement
+          return el?.id === 'context-ai-root' || el?.id === 'context-ai-shadow-host'
+        }))
+    if (inOurUI) {
+      lastMouseDownOnOurUIRef.current = Date.now()
       return
     }
     
@@ -690,7 +713,15 @@ const isSelectionReasonable = useCallback((range: Range): boolean => {
    */
   const handleMouseUp = useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement
-    if (target.closest('#context-ai-root')) {
+    const inOurUI =
+      !!target.closest('#context-ai-root') ||
+      !!target.closest('#context-ai-shadow-host') ||
+      (typeof (e as any).composedPath === 'function' &&
+        ((e as any).composedPath() as EventTarget[]).some((n) => {
+          const el = n as HTMLElement
+          return el?.id === 'context-ai-root' || el?.id === 'context-ai-shadow-host'
+        }))
+    if (inOurUI) {
       return
     }
     const timeSinceMouseDown = Date.now() - mouseDownTimeRef.current
@@ -772,12 +803,24 @@ const isSelectionReasonable = useCallback((range: Range): boolean => {
    * 如果点击在翻译面板上，不清除，避免拖动时误关闭
    */
   const handleClick = useCallback((e: MouseEvent) => {
-    // 如果点击在插件组件上（包括翻译面板），不清除选择，避免拖动时误关闭
     const target = e.target as HTMLElement
-    if (target.closest('#context-ai-root') || target.closest('#translation-panel-root')) {
+    const inOurUI =
+      !!target.closest('#context-ai-root') ||
+      !!target.closest('#translation-panel-root') ||
+      !!target.closest('#context-ai-shadow-host') ||
+      (typeof (e as any).composedPath === 'function' &&
+        ((e as any).composedPath() as EventTarget[]).some((n) => {
+          const el = n as HTMLElement
+          return el?.id === 'context-ai-root' || el?.id === 'translation-panel-root' || el?.id === 'context-ai-shadow-host'
+        }))
+    if (inOurUI) {
       return
     }
     if (Date.now() - lastMouseUpTimeRef.current < 150) {
+      return
+    }
+    // 用户刚在工具栏内 mousedown，不因选区已空而清空（避免点击下拉时闪退）
+    if (Date.now() - lastMouseDownOnOurUIRef.current < TOOLBAR_CLICK_GRACE_MS) {
       return
     }
     // 翻译面板打开时不因选区为空而清空，避免误触导致面板消失

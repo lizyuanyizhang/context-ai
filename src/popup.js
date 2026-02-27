@@ -209,8 +209,15 @@
     var openSettings = document.getElementById('openSettings')
     if (openSettings) {
       openSettings.addEventListener('click', function () {
+        var url = /Firefox/i.test(navigator.userAgent)
+          ? 'about:addons'
+          : ('chrome://extensions/?id=' + (chrome.runtime && chrome.runtime.id ? chrome.runtime.id : ''))
         if (chrome.runtime && chrome.tabs) {
-          chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id })
+          chrome.tabs.create({ url: url }).catch(function () {
+            window.open(url, '_blank')
+          })
+        } else {
+          window.open(url, '_blank')
         }
       })
     }

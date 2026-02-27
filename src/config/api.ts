@@ -9,9 +9,9 @@
 // 为什么用兼容模式？因为 OpenAI 的 API 格式是业界标准，兼容模式让我们可以用相同的代码调用不同的模型
 export const QWEN_API_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 
-// API 密钥：从环境变量读取，避免硬编码在代码中（安全考虑）
-// 用户需要在 .env 文件中设置自己的 API Key
-export const QWEN_API_KEY = import.meta.env.VITE_QWEN_API_KEY || ''
+// API 密钥：上架商店时仅使用用户填入（popup 设置），不读取 .env，避免泄露
+// 本地开发若需默认值，可在 .env 设置，但 build 产物不应包含密钥
+export const QWEN_API_KEY = ''
 
 // 默认使用的模型：qwen-turbo 是通义千问的快速响应模型，适合翻译场景
 // qwen-plus 更准确但更慢，qwen-max 最准确但最慢

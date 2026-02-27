@@ -60,7 +60,7 @@ export const LANGUAGE_CONFIGS: Record<SupportedLanguage, LanguageConfig> = {
   zh: { lang: 'zh-CN', rate: 0.95, pitch: 1.0, volume: 1.0 },
   fr: { lang: 'fr-FR', rate: 0.95, pitch: 1.0, volume: 1.0 },
   ja: { lang: 'ja-JP', rate: 0.95, pitch: 1.0, volume: 1.0 },
-  es: { lang: 'es-ES', rate: 0.95, pitch: 1.0, volume: 1.0 }
+  es: { lang: 'es-ES', rate: 0.9, pitch: 1.0, volume: 1.0 }
 }
 
 /**
@@ -73,15 +73,19 @@ function normalizeTextForTTS(text: string, lang: SupportedLanguage): string {
   let out = text
   
   // 移除不应朗读的符号（直接删除，不替换）
-  // 引号：中文引号「」、英文引号 "" ''、全角引号 "" ''、单引号 '' ''
-  out = out.replace(/[""''「」『』《》]/g, '')
+  // 引号：中文引号、英文引号（含弯引号）
+  out = out.replace(/[""''“”‘’「」『』《》]/g, '')
   // 省略号：... 和 …（中文省略号）
   out = out.replace(/\.{2,}/g, '') // 两个或更多点
   out = out.replace(/…/g, '') // 中文省略号
   // 括号：() [] {} （）【】等（保留内容，移除括号）
   out = out.replace(/[()[\]{}（）【】]/g, '')
-  // 其他标点：破折号、连接号等（可选，根据需求）
-  // out = out.replace(/[—–-]/g, ' ') // 破折号替换为空格
+  // 标点：冒号、逗号、句号、分号、问号、感叹号（保留单词和数字，移除停顿符号）
+  out = out.replace(/[,:;.!?，。；：！？]/g, ' ')
+  // 其他分隔符：枚举点、连接号、破折号、中点、日文中黑点、斜杠、竖线
+  out = out.replace(/[、·•‧・]/g, ' ')
+  out = out.replace(/[—–―\-]/g, ' ')
+  out = out.replace(/[\/\\|]/g, ' ')
   
   // 替换易误读符号为可读词
   const atReadings: Record<SupportedLanguage, string> = {
@@ -344,7 +348,19 @@ export function segmentTextByLanguage(text: string): TTSSegment[] {
     }
     const run = text.slice(i, j).trim()
     if (run.length > 0) {
-      const lang: SupportedLanguage = type === 'ja' ? 'ja' : type === 'cjk' ? detectLanguage(run) : detectLanguage(run)
+      let lang: SupportedLanguage
+      if (type === 'ja') {
+        // 连续假名块必定按日语处理
+        lang = 'ja'
+      } else if (type === 'cjk') {
+        // 纯 CJK 块：有些检测器会把中文短语误判成日语
+        const detected = detectLanguage(run)
+        const hasKana = /[\u3040-\u30FF]/.test(run)
+        // 如果检测为日语但完全没有假名，更符合中文特征，强行归为中文
+        lang = detected === 'ja' && !hasKana ? 'zh' : detected
+      } else {
+        lang = detectLanguage(run)
+      }
       segments.push({ text: run, lang })
     }
     i = j
@@ -399,6 +415,107 @@ export function segmentTextByQuotedOriginal(
     const inside = text.slice(open + 1, close).trim()
     if (inside.length > 0) segments.push({ text: inside, lang: sourceLang })
     i = close + 1
+  }
+  return segments
+}
+
+/**
+ * 通用括注切分：支持「」、“”、""、()、（）等标记。
+ * 规则：
+ * - 括注内：按语言检测；若检测为 targetLang 则用目标语读；若为 sourceLang 用源语读；否则趋向目标语（多为译注/英文释义）。
+ * - 括注外：按书写系统切分并检测；等于源语则用源语，否则用目标语。
+ * 用途：法→英、德→英等语法点拨里常见「法语正文（英文释义）」的模式。
+ */
+export function segmentTextByQuotesAndParentheses(
+  text: string,
+  sourceLang: SupportedLanguage,
+  targetLang: SupportedLanguage
+): TTSSegment[] {
+  if (!text || !text.trim()) return []
+  // 标注每种成对符号的类型：quote（引号）或 paren（括注）
+  const pairs: Array<{ open: string; close: string; type: 'quote' | 'paren' }> = [
+    { open: '「', close: '」', type: 'quote' },
+    { open: '『', close: '』', type: 'quote' },
+    { open: '“', close: '”', type: 'quote' },
+    { open: '"', close: '"', type: 'quote' },
+    { open: '‘', close: '’', type: 'quote' },
+    { open: "'", close: "'", type: 'quote' },
+    { open: '«', close: '»', type: 'quote' },
+    { open: '`', close: '`', type: 'quote' },
+    { open: '《', close: '》', type: 'quote' },
+    { open: '（', close: '）', type: 'paren' },
+    { open: '(', close: ')', type: 'paren' }
+  ]
+  const nextOpen = (start: number): { open: string; index: number; close: string; type: 'quote' | 'paren' } | null => {
+    let found: { open: string; index: number; close: string; type: 'quote' | 'paren' } | null = null
+    let minIdx = Infinity
+    for (const p of pairs) {
+      const idx = text.indexOf(p.open, start)
+      if (idx !== -1 && idx < minIdx) {
+        minIdx = idx
+        found = { open: p.open, index: idx, close: p.close, type: p.type }
+      }
+    }
+    return found
+  }
+  const segments: TTSSegment[] = []
+  let i = 0
+  while (i < text.length) {
+    const op = nextOpen(i)
+    if (!op) {
+      const rest = text.slice(i).trim()
+      if (rest) {
+        const outs = segmentTextByLanguage(rest)
+        for (const s of outs) {
+          // 解释区一律优先用目标语朗读；仅当检测为源语且片段很短（术语/词组）时用源语
+          const isShortToken = s.text.length <= 16 && s.text.split(/\s+/).filter(Boolean).length <= 2
+          const lang = (s.lang === sourceLang && isShortToken) ? sourceLang : targetLang
+          segments.push({ text: s.text, lang })
+        }
+      }
+      break
+    }
+    const before = text.slice(i, op.index).trim()
+    if (before) {
+      const outs = segmentTextByLanguage(before)
+      for (const s of outs) {
+        const isShortToken = s.text.length <= 16 && s.text.split(/\s+/).filter(Boolean).length <= 2
+        const lang = (s.lang === sourceLang && isShortToken) ? sourceLang : targetLang
+        segments.push({ text: s.text, lang })
+      }
+    }
+    const closeIdx = text.indexOf(op.close, op.index + op.open.length)
+    if (closeIdx === -1) {
+      const inside = text.slice(op.index + op.open.length).trim()
+      if (inside) {
+        let lang: SupportedLanguage
+        if (op.type === 'quote') {
+          // 引号内强制用源语
+          lang = sourceLang
+        } else {
+          // 括注内默认视为原文示例：若不含 CJK 且含拉丁字母，则用源语；含 CJK 明显为解释则用目标语
+          const hasCJK = /[\u4e00-\u9fa5\u3040-\u30FF]/.test(inside)
+          const hasLatin = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(inside)
+          lang = (!hasCJK && hasLatin) ? sourceLang : targetLang
+        }
+        segments.push({ text: inside, lang })
+      }
+      break
+    } else {
+      const inside = text.slice(op.index + op.open.length, closeIdx).trim()
+      if (inside) {
+        let lang: SupportedLanguage
+        if (op.type === 'quote') {
+          lang = sourceLang
+        } else {
+          const hasCJK = /[\u4e00-\u9fa5\u3040-\u30FF]/.test(inside)
+          const hasLatin = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(inside)
+          lang = (!hasCJK && hasLatin) ? sourceLang : targetLang
+        }
+        segments.push({ text: inside, lang })
+      }
+      i = closeIdx + op.close.length
+    }
   }
   return segments
 }

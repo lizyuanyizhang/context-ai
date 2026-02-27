@@ -39,3 +39,7 @@ try {
   console.error('❌ 复制 popup.js 失败：', error.message)
   process.exit(1)
 }
+
+console.log('\n  ⚠️  构建完成。若插件不显示，请到 Chrome 重新加载扩展：')
+console.log('     chrome://extensions → 找到 Context AI → 点击「重新加载」')
+console.log('     并确认加载的是本项目的 dist 目录（不是项目根目录）。\n')

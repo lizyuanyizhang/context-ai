@@ -1,6 +1,6 @@
 /**
  * 生词本存储服务
- * 
+ *
  * 这个服务类封装了生词本的所有数据操作：
  * 1. 保存单词到生词本
  * 2. 读取生词本列表
@@ -15,6 +15,8 @@
  */
 
 import { TranslationResult } from '../content/components/TranslationPanel'
+import { scheduleNextReview, type OurRating } from '../utils/fsrsScheduler'
+import type { StoredFSRSCard } from '../utils/fsrsScheduler'
 
 /**
  * 单词掌握状态
@@ -50,6 +52,8 @@ export interface WordbookEntry extends TranslationResult {
   nextReviewAt?: number
   // 最后学习时间（时间戳，毫秒）
   lastStudiedAt?: number
+  // FSRS 算法数据（用于智能间隔重复，优于固定 1/3/7 天）
+  fsrsData?: StoredFSRSCard
 }
 
 /**
@@ -375,61 +379,32 @@ class WordbookService {
   }
 
   /**
-   * 更新单词学习状态
-   * 
+   * 更新单词学习状态（FSRS 间隔重复算法）
+   *
+   * 基于 FSRS 算法动态计算下次复习时间：
+   * - again：不认识，短期复习（约 1 分钟）
+   * - good：认识，正常间隔
+   * - easy：已掌握，较长间隔
+   *
    * @param id - 单词 ID
-   * @param status - 掌握状态
-   * @param isCorrect - 是否回答正确
+   * @param rating - 用户评分（again / good / easy）
    */
-  async updateStudyStatus(
-    id: string, 
-    status: MasteryStatus, 
-    isCorrect: boolean
-  ): Promise<void> {
+  async updateStudyStatus(id: string, rating: OurRating): Promise<void> {
     const storage = await this.getWordbook()
     const word = storage.words.find(w => w.id === id)
-    
+
     if (word) {
-      // 更新学习状态
-      word.masteryStatus = status
+      const { stored, nextReviewAt } = scheduleNextReview(word.fsrsData, rating)
+
+      word.fsrsData = stored
+      word.nextReviewAt = nextReviewAt
       word.lastStudiedAt = Date.now()
       word.studyCount = (word.studyCount || 0) + 1
-      
-      // 如果回答正确，增加正确次数
-      if (isCorrect) {
+      if (rating !== 'again') {
         word.correctCount = (word.correctCount || 0) + 1
       }
-      
-      // 根据掌握状态和正确率设置下次复习时间
-      // 「不认识」：短期复习（2 分钟后再次出现，类似 Anki Again）
-      if (status === 'learning' && !isCorrect) {
-        const AGAIN_MINUTES = 2
-        word.nextReviewAt = Date.now() + AGAIN_MINUTES * 60 * 1000
-      } else {
-        // 使用简单的间隔复习算法：1天、3天、7天、14天、30天
-        const intervals = [1, 3, 7, 14, 30] // 天数
-        const correctRate = word.correctCount && word.studyCount
-          ? word.correctCount / word.studyCount
-          : 0
+      word.masteryStatus = rating === 'again' ? 'learning' : 'mastered'
 
-        let intervalIndex = 0
-        if (correctRate >= 0.8) {
-          intervalIndex = Math.min(4, Math.floor(correctRate * 5))
-        } else if (correctRate >= 0.6) {
-          intervalIndex = 2
-        } else if (correctRate >= 0.4) {
-          intervalIndex = 1
-        }
-
-        if (status === 'mastered') {
-          intervalIndex = 4 // 30天
-        }
-
-        const intervalDays = intervals[intervalIndex]
-        word.nextReviewAt = Date.now() + intervalDays * 24 * 60 * 60 * 1000
-      }
-      
-      // 保存
       await this.saveWordbook(storage)
     }
   }

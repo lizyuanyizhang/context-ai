@@ -315,13 +315,13 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
     >
       <canvas ref={canvasRef} className="hidden" />
       {step === 'capture' && (
-        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl" style={{ background: 'rgba(255,242,248,0.98)', border: '1px solid rgba(220,190,200,0.35)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
+        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl" style={{ background: 'rgba(255,255,255,0.98)', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
           <p className="text-sm font-medium" style={{ color: 'var(--notion-text)' }}>
             {mode === 'screenshot' ? '选择要截图的标签页或窗口' : '选择要录屏的标签页或窗口'}
           </p>
           {error && (
             <div className="flex flex-col items-center gap-2 max-w-md">
-              <p className="text-xs text-center" style={{ color: 'var(--notion-error)' }}>{error}</p>
+              <p className="text-xs text-center" style={{ color: 'rgba(0,0,0,0.8)' }}>{error}</p>
               {permissionDenied && (
                 <p className="text-xs text-center" style={{ color: 'var(--notion-text-tertiary)' }}>
                   3秒后自动关闭...
@@ -334,7 +334,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
               <button
                 onClick={startCapture}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-                style={{ background: 'rgba(240,200,215,0.6)', color: 'rgba(0,0,0,0.8)', border: '1px solid rgba(220,180,195,0.5)' }}
+                style={{ background: 'rgba(0,0,0,0.08)', color: 'rgba(0,0,0,0.85)', border: '1px solid rgba(0,0,0,0.12)' }}
               >
                 {mode === 'screenshot' ? <Camera className="w-4 h-4" /> : <Video className="w-4 h-4" />}
                 {mode === 'screenshot' ? '选择并截图' : '选择并录屏'}
@@ -343,7 +343,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
             <button
               onClick={onClose}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(255,248,252,0.9)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(220,190,200,0.5)' }}
+              style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(0,0,0,0.12)' }}
             >
               <X className="w-4 h-4" /> {permissionDenied ? '关闭' : '取消'}
             </button>
@@ -353,11 +353,11 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
 
       {/* 自定义大小选择界面 */}
       {step === 'customSize' && streamRef.current && (
-        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl" style={{ background: 'rgba(255,242,248,0.98)', border: '1px solid rgba(220,190,200,0.35)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
+        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl" style={{ background: 'rgba(255,255,255,0.98)', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
           <p className="text-sm font-medium" style={{ color: 'var(--notion-text)' }}>
             自定义{mode === 'screenshot' ? '截图' : '录屏'}大小
           </p>
-          {error && <p className="text-xs" style={{ color: 'var(--notion-error)' }}>{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'rgba(0,0,0,0.8)' }}>{error}</p>}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-xs" style={{ color: 'var(--notion-text-secondary)' }}>宽度：</label>
@@ -370,8 +370,8 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
                 }}
                 className="px-2 py-1 rounded text-sm"
                 style={{
-                  border: '1px solid rgba(220,190,200,0.5)',
-                  background: 'rgba(255,248,252,0.9)',
+                  border: '1px solid rgba(0,0,0,0.12)',
+                  background: 'rgba(250,250,250,0.98)',
                   width: '80px'
                 }}
                 min="1"
@@ -391,8 +391,8 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
                 }}
                 className="px-2 py-1 rounded text-sm"
                 style={{
-                  border: '1px solid rgba(220,190,200,0.5)',
-                  background: 'rgba(255,248,252,0.9)',
+                  border: '1px solid rgba(0,0,0,0.12)',
+                  background: 'rgba(250,250,250,0.98)',
                   width: '80px'
                 }}
                 min="1"
@@ -405,7 +405,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
             <button
               onClick={handleCustomSizeConfirm}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(240,200,215,0.6)', color: 'rgba(0,0,0,0.8)', border: '1px solid rgba(220,180,195,0.5)' }}
+              style={{ background: 'rgba(0,0,0,0.08)', color: 'rgba(0,0,0,0.85)', border: '1px solid rgba(0,0,0,0.12)' }}
             >
               确认
             </button>
@@ -415,7 +415,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
                 setStep('select')
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(255,248,252,0.9)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(220,190,200,0.5)' }}
+              style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(0,0,0,0.12)' }}
             >
               返回
             </button>
@@ -425,7 +425,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
                 onClose()
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(255,248,252,0.9)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(220,190,200,0.5)' }}
+              style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(0,0,0,0.12)' }}
             >
               <X className="w-4 h-4" /> 取消
             </button>
@@ -468,19 +468,19 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
                 <button
                   onClick={() => setStep('customSize')}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-                  style={{ background: 'rgba(255,248,252,0.9)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(220,190,200,0.5)' }}
+                  style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(0,0,0,0.12)' }}
                 >
                   自定义大小
                 </button>
                 <button
                   onClick={mode === 'screenshot' ? captureScreenshot : startRecording}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white"
-                  style={{ background: 'rgba(220,100,120,0.9)' }}
+                  style={{ background: 'rgba(0,0,0,0.85)' }}
                 >
                   {mode === 'screenshot' ? <Camera className="w-4 h-4" /> : <Video className="w-4 h-4" />}
                   {mode === 'screenshot' ? '截取' : '开始录屏'}
                 </button>
-                <button onClick={() => { stopStream(); onClose() }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium" style={{ background: 'rgba(255,248,252,0.9)', color: 'rgba(0,0,0,0.7)' }}>
+                <button onClick={() => { stopStream(); onClose() }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium" style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)' }}>
                   <X className="w-4 h-4" /> 取消
                 </button>
               </>
@@ -489,7 +489,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
               <button
                 onClick={stopRecording}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white"
-                style={{ background: 'var(--notion-error)' }}
+                style={{ background: 'rgba(0,0,0,0.85)' }}
               >
                 <Square className="w-4 h-4" /> 停止录屏
               </button>
@@ -499,7 +499,7 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
       )}
 
       {step === 'preview' && resultBlob && (
-        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl max-w-lg" style={{ background: 'rgba(255,242,248,0.98)', border: '1px solid rgba(220,190,200,0.35)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
+        <div className="flex flex-col items-center gap-4 p-6 rounded-2xl max-w-lg" style={{ background: 'rgba(255,255,255,0.98)', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}>
           <p className="text-sm font-medium" style={{ color: 'var(--notion-text)' }}>
             {resultType === 'image' ? '截图已就绪' : '录屏已就绪'}
           </p>
@@ -509,14 +509,14 @@ function CaptureOverlay({ mode, onClose, customSize }: CaptureOverlayProps) {
             <button
               onClick={handleSave}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white"
-              style={{ background: 'var(--notion-accent)' }}
+              style={{ background: 'rgba(0,0,0,0.85)' }}
             >
               <Download className="w-4 h-4" /> 保存
             </button>
             <button
               onClick={handleDelete}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(255,248,252,0.9)', color: 'var(--notion-error)', border: '1px solid rgba(220,190,200,0.5)' }}
+              style={{ background: 'rgba(250,250,250,0.98)', color: 'rgba(0,0,0,0.7)', border: '1px solid rgba(0,0,0,0.12)' }}
             >
               <Trash2 className="w-4 h-4" /> 删除
             </button>
